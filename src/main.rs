@@ -7,7 +7,7 @@ use crate::{
     network::Event,
     settings::{Setting, Settings},
 };
-use libp2p::{PeerId, identity::ed25519::PublicKey};
+use libp2p::{PeerId, identity::PublicKey, identity::ed25519};
 use std::{collections::HashMap, error::Error, sync::Arc};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
@@ -17,7 +17,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let _ = tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
-    let identities = Arc::new(RwLock::new(HashMap::<PeerId, PublicKey>::new()));
+    let identities = Arc::new(RwLock::new(HashMap::<PeerId, ed25519::PublicKey>::new()));
     let settings = Settings::load().await;
     // Settings::save(&settings).await;
     let tui = Tui::new();
@@ -28,9 +28,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         network::new(identities.clone(), settings.clone(), tui_tx.clone()).await;
     let token = CancellationToken::new();
     let child_token = token.child_token();
-
     tokio::spawn(event_loop.run());
     tokio::spawn(tui::run(client, token, tui));
+    let ed_pub = ed25519::Keypair::generate().public();
+    let pb = PublicKey::from(ed_pub);
     loop {
         // Read full lines from stdin
         tokio::select! {
@@ -42,15 +43,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 match event {
                     Event::InboundMessage { message, sender } => {
                         tracing::info!("recived message: {}: {}", sender.to_bytes().iter().map(|b| b.to_string()).collect::<String>(), message.content);
+                        let peer_id = PublicKey::from(*sender).to_peer_id();
+                        // pull name from sqlite
+                        //
                         let message = crate::tui::types::Message {
                             id: message.id,
                             content: message.content,
                             status: crate::tui::types::MessageStatus::ReceivedNotRead,
                             sender: crate::tui::types::Contact {
                                 name: "Anonymous".to_string(),
-                                peer_id: PeerId::random(), // I really need that peer_id
+                                peer_id
+                                // peer_id: PeerId::, // I really need that peer_id
                             },
                         };
+                        // TODO: save to sqlite
+
+                        // send to tui
                         let _ = tui_tx.send(crate::tui::Event::MessageReceived(message));
                     }
                     Event::OutboundMessageReceived { message_id } => {
