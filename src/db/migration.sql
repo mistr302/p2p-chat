@@ -1,6 +1,7 @@
 -- Contacts table
 CREATE TABLE IF NOT EXISTS contacts (
     peer_id TEXT PRIMARY KEY,
+    -- public_key
     name TEXT NOT NULL
 );
 
