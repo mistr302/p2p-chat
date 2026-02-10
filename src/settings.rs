@@ -66,14 +66,17 @@ impl Settings {
                 tokio::fs::File::create(settings_path.clone())
                     .await
                     .unwrap();
-                "".to_string()
+                tracing::error!("{:?}", err);
+                tracing::warn!("Defaulting to predefined settings");
+                return settings;
             }
         };
         let mut user_settings = match serde_json::from_str::<HashMap<SettingName, Setting>>(&json) {
             Ok(s) => s,
             Err(err) => {
                 tracing::error!("{:?}", err);
-                settings.clone()
+                tracing::warn!("Defaulting to predefined settings");
+                return settings;
             }
         };
 

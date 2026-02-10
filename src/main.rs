@@ -3,6 +3,7 @@ mod network;
 mod settings;
 mod tui;
 use crate::tui::Tui;
+use crate::tui::types::Contact;
 use crate::{
     network::Event,
     settings::{Setting, Settings},
@@ -14,10 +15,18 @@ use tokio_util::sync::CancellationToken;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let _ = tracing_subscriber::fmt()
+    tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
-    let identities = Arc::new(RwLock::new(HashMap::<PeerId, ed25519::PublicKey>::new()));
+
+    // TODO: add an actual sqlite file
+    let sqlite = tokio_rusqlite::Connection::open_in_memory()
+        .await
+        .expect("Couldnt open sqlite connection");
+    db::migrate_db::migrate(&sqlite)
+        .await
+        .expect("Failed to migrate database");
+
     let settings = Settings::load().await;
     // Settings::save(&settings).await;
     let tui = Tui::new();
@@ -25,7 +34,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let settings = Arc::new(RwLock::new(settings));
     let (event_loop, client, mut network_event) =
-        network::new(identities.clone(), settings.clone(), tui_tx.clone()).await;
+        network::new(sqlite.clone(), settings.clone(), tui_tx.clone()).await;
     let token = CancellationToken::new();
     let child_token = token.child_token();
     tokio::spawn(event_loop.run());
@@ -45,7 +54,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         tracing::info!("recived message: {}: {}", sender.to_bytes().iter().map(|b| b.to_string()).collect::<String>(), message.content);
                         let peer_id = PublicKey::from(*sender).to_peer_id();
                         // pull name from sqlite
-                        //
+                        sqlite
+                            .call(move |c| {
+                                let mut stmt = c.prepare("SELECT peer_id, name FROM contacts WHERE peer_id LIKE ?1")?;
+                                stmt.query_one([peer_id.to_string()], |r| {
+                                    Ok(Contact {
+                                        peer_id,
+                                        name: r.get(1)?,
+                                    })
+                                })
+                            })
+                            .await.unwrap();
                         let message = crate::tui::types::Message {
                             id: message.id,
                             content: message.content,

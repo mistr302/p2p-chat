@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS contacts (
     -- public_key
     name TEXT NOT NULL
 );
-
+-- Name table
+-- states if name is verified by a central server
 -- Messages table
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,              -- uuid::Uuid as TEXT

@@ -13,6 +13,7 @@ use tokio::sync::{
     RwLock,
     mpsc::{self, UnboundedSender},
 };
+use tokio_rusqlite::Connection;
 use uuid::Uuid;
 
 use crate::{
@@ -35,7 +36,7 @@ pub enum Command {
     FriendCommand(FriendCommand),
 }
 pub(crate) async fn new(
-    identities: Arc<RwLock<HashMap<PeerId, PublicKey>>>,
+    sqlite_conn: Connection,
     settings: Arc<RwLock<HashMap<SettingName, Setting>>>,
     tui_tx: UnboundedSender<crate::tui::Event>,
 ) -> (EventLoop, Client, mpsc::Receiver<Event>) {
@@ -88,7 +89,15 @@ pub(crate) async fn new(
         keys: id.clone(),
         id: PeerId::from_public_key(&id.public()),
     };
-    let event_loop = EventLoop::new(swarm, command_rx, event_tx, settings, id, tui_tx);
+    let event_loop = EventLoop::new(
+        swarm,
+        command_rx,
+        event_tx,
+        settings,
+        id,
+        tui_tx,
+        sqlite_conn,
+    );
     (event_loop, client, event_rx)
 }
 #[derive(Debug)]
@@ -118,6 +127,7 @@ pub struct EventLoop {
     event_sender: mpsc::Sender<Event>,
     settings: Arc<tokio::sync::RwLock<HashMap<SettingName, Setting>>>,
     keys: Keypair,
+    sqlite_conn: Connection,
     tui_tx: UnboundedSender<crate::tui::Event>,
 }
 #[derive(Clone)]
@@ -135,6 +145,7 @@ impl EventLoop {
         settings: Arc<tokio::sync::RwLock<HashMap<SettingName, Setting>>>,
         keys: Keypair,
         tui_tx: UnboundedSender<crate::tui::Event>,
+        sqlite_conn: Connection,
     ) -> Self {
         EventLoop {
             swarm,
@@ -143,6 +154,7 @@ impl EventLoop {
             settings,
             keys,
             tui_tx,
+            sqlite_conn,
         }
     }
     pub async fn run(mut self) {
@@ -164,6 +176,7 @@ impl EventLoop {
                 let mut known = Vec::<PeerId>::new();
                 for (peer_id, _multiaddr) in list {
                     tracing::info!("{peer_id} peer connected!");
+                    // Maybe dial and get locally set name
                     if !known.contains(&peer_id) {
                         let _ = self.tui_tx.send(crate::tui::Event::AddContact(
                             crate::tui::types::Contact {
@@ -177,13 +190,12 @@ impl EventLoop {
             }
             SwarmEvent::Behaviour(BehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
                 for (peer_id, _multiaddr) in list {
-                    tracing::info!("{peer_id} discovered via mDNS");
+                    tracing::info!("{peer_id} expired mDNS");
                 }
             }
             SwarmEvent::NewListenAddr { address, .. } => {
                 tracing::info!("Local node is listening on {address}");
             }
-
             SwarmEvent::Behaviour(BehaviourEvent::DirectMessage(
                 request_response::Event::Message { message, .. },
             )) => match message {

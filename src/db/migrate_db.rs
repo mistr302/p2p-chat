@@ -1,7 +1,7 @@
 use tokio::fs::read_to_string;
 use tokio_rusqlite::{Connection, Result};
 
-async fn migrate(conn: &Connection) -> Result<()> {
+pub async fn migrate(conn: &Connection) -> Result<()> {
     // TODO: Change the path to be win compatible
     let sql_stmt = read_to_string("src/db/migration.sql").await;
     conn.call(|conn| {
@@ -10,7 +10,7 @@ async fn migrate(conn: &Connection) -> Result<()> {
             panic!("couldnt extract migration statement. {e}");
         };
 
-        conn.execute(sql.as_str(), [])?;
+        conn.execute_batch(sql.as_str())?;
         Ok(())
     })
     .await?;

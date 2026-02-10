@@ -1,1 +1,1 @@
-mod migrate_db;
+pub mod migrate_db;
