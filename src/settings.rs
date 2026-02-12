@@ -127,5 +127,7 @@ static REQUIRED_SETTINGS: &[(SettingName, Setting)] = &[(
 #[derive(PartialEq)]
 pub(crate) enum SaveFile {
     Settings,
+    Database,
 }
-static SAVE_FILES: &[(SaveFile, &str)] = &[(SaveFile::Settings, "settings")];
+static SAVE_FILES: &[(SaveFile, &str)] =
+    &[(SaveFile::Settings, "settings"), (SaveFile::Database, "db")];

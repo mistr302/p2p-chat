@@ -2,6 +2,7 @@ mod db;
 mod network;
 mod settings;
 mod tui;
+use crate::settings::get_config_save_file_path;
 use crate::tui::Tui;
 use crate::tui::types::Contact;
 use crate::{
@@ -20,9 +21,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .init();
 
     // TODO: add an actual sqlite file
-    let sqlite = tokio_rusqlite::Connection::open_in_memory()
-        .await
-        .expect("Couldnt open sqlite connection");
+    let sqlite =
+        tokio_rusqlite::Connection::open(get_config_save_file_path(settings::SaveFile::Database))
+            .await
+            .expect("Couldnt open sqlite connection");
+    // let sqlite = tokio_rusqlite::Connection::open_in_memory()
+    //     .await
+    //     .expect("Couldnt open sqlite connection");
     db::migrate_db::migrate(&sqlite)
         .await
         .expect("Failed to migrate database");
@@ -52,6 +57,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 match event {
                     Event::InboundMessage { message, sender } => {
                         tracing::info!("recived message: {}: {}", sender.to_bytes().iter().map(|b| b.to_string()).collect::<String>(), message.content);
+                        // TODO: maybe find out if peer id isnt already being sent in libp2p
                         let peer_id = PublicKey::from(*sender).to_peer_id();
                         // pull name from sqlite
                         sqlite
