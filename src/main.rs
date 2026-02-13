@@ -44,8 +44,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let child_token = token.child_token();
     tokio::spawn(event_loop.run());
     tokio::spawn(tui::run(client, token, tui));
-    let ed_pub = ed25519::Keypair::generate().public();
-    let pb = PublicKey::from(ed_pub);
     loop {
         // Read full lines from stdin
         tokio::select! {
@@ -59,18 +57,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         tracing::info!("recived message: {}: {}", sender.to_bytes().iter().map(|b| b.to_string()).collect::<String>(), message.content);
                         // TODO: maybe find out if peer id isnt already being sent in libp2p
                         let peer_id = PublicKey::from(*sender).to_peer_id();
-                        // pull name from sqlite
-                        sqlite
-                            .call(move |c| {
-                                let mut stmt = c.prepare("SELECT peer_id, name FROM contacts WHERE peer_id LIKE ?1")?;
-                                stmt.query_one([peer_id.to_string()], |r| {
-                                    Ok(Contact {
-                                        peer_id,
-                                        name: r.get(1)?,
-                                    })
-                                })
-                            })
-                            .await.unwrap();
+                        // // pull name from sqlite
+                        // sqlite
+                        //     .call(move |c| {
+                        //         let mut stmt = c.prepare("SELECT peer_id, name FROM contacts WHERE peer_id LIKE ?1")?;
+                        //         stmt.query_one([peer_id.to_string()], |r| {
+                        //             Ok(Contact {
+                        //                 peer_id,
+                        //                 name: r.get(1)?,
+                        //             })
+                        //         })
+                        //     })
+                        //     .await.unwrap();
                         let message = crate::tui::types::Message {
                             id: message.id,
                             content: message.content,

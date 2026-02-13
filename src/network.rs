@@ -25,8 +25,9 @@ use crate::{
         signable::sign,
     },
     settings::{Setting, SettingName, SettingValue},
+    tui::Event::EditContact,
+    tui::types::Contact,
 };
-
 pub mod chat;
 pub mod friends;
 pub mod signable;
@@ -89,15 +90,16 @@ pub(crate) async fn new(
         keys: id.clone(),
         id: PeerId::from_public_key(&id.public()),
     };
-    let event_loop = EventLoop::new(
+    let event_loop = EventLoop {
         swarm,
         command_rx,
-        event_tx,
+        event_sender: event_tx,
         settings,
-        id,
+        keys: id,
         tui_tx,
         sqlite_conn,
-    );
+        client: client.clone(),
+    };
     (event_loop, client, event_rx)
 }
 #[derive(Debug)]
@@ -129,6 +131,7 @@ pub struct EventLoop {
     keys: Keypair,
     sqlite_conn: Connection,
     tui_tx: UnboundedSender<crate::tui::Event>,
+    client: Client,
 }
 #[derive(Clone)]
 pub(crate) struct Client {
@@ -138,25 +141,6 @@ pub(crate) struct Client {
     pub id: PeerId,
 }
 impl EventLoop {
-    fn new(
-        swarm: Swarm<Behaviour>,
-        command_rx: mpsc::Receiver<Command>,
-        event_sender: mpsc::Sender<Event>,
-        settings: Arc<tokio::sync::RwLock<HashMap<SettingName, Setting>>>,
-        keys: Keypair,
-        tui_tx: UnboundedSender<crate::tui::Event>,
-        sqlite_conn: Connection,
-    ) -> Self {
-        EventLoop {
-            swarm,
-            command_rx,
-            event_sender,
-            settings,
-            keys,
-            tui_tx,
-            sqlite_conn,
-        }
-    }
     pub async fn run(mut self) {
         loop {
             tokio::select! {
@@ -186,6 +170,7 @@ impl EventLoop {
                         ));
                         known.push(peer_id);
                     }
+                    self.client.request_name(peer_id).await;
                 }
             }
             SwarmEvent::Behaviour(BehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
@@ -318,7 +303,15 @@ impl EventLoop {
                 } => {
                     if let Some((resp, sender)) = response.verify() {
                         match resp {
-                            FriendResponse::RequestName { name } => {}
+                            FriendResponse::RequestName { name } => {
+                                tracing::info!("Received valid name response");
+                                self.tui_tx
+                                    .send(EditContact(Contact {
+                                        peer_id: peer,
+                                        name,
+                                    }))
+                                    .expect("to send");
+                            }
                             FriendResponse::VerifyName(name) => {}
                             FriendResponse::AddFriendAck => {}
                             FriendResponse::AcceptFriendAck => {}

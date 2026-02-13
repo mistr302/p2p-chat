@@ -51,15 +51,16 @@ impl EventLoop {
     }
 }
 impl Client {
-    async fn request_name(&mut self, peer: PeerId) {
+    pub async fn request_name(&mut self, peer: PeerId) {
         self.command_sender
             .send(super::Command::FriendCommand(FriendCommand::RequestName {
                 peer,
             }))
             .await
             .expect("to send request");
+        tracing::info!("Sending name req");
     }
-    async fn verify_name(&mut self, peer: PeerId, name: String) {
+    pub async fn verify_name(&mut self, peer: PeerId, name: String) {
         self.command_sender
             .send(super::Command::FriendCommand(FriendCommand::VerifyName {
                 name,
@@ -68,7 +69,7 @@ impl Client {
             .await
             .expect("to send request");
     }
-    async fn send_friend_request(&mut self, peer: PeerId) {
+    pub async fn send_friend_request(&mut self, peer: PeerId) {
         self.command_sender
             .send(super::Command::FriendCommand(FriendCommand::AddFriend {
                 peer,
@@ -76,7 +77,7 @@ impl Client {
             .await
             .expect("to send request");
     }
-    async fn accept_friend_req(&mut self, peer: PeerId) {
+    pub async fn accept_friend_req(&mut self, peer: PeerId) {
         self.command_sender
             .send(super::Command::FriendCommand(FriendCommand::AcceptFriend {
                 peer,
@@ -85,7 +86,7 @@ impl Client {
             .await
             .expect("to send request");
     }
-    async fn deny_friend_req(&mut self, peer: PeerId) {
+    pub async fn deny_friend_req(&mut self, peer: PeerId) {
         self.command_sender
             .send(super::Command::FriendCommand(FriendCommand::AcceptFriend {
                 peer,

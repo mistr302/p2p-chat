@@ -38,6 +38,7 @@ pub enum Event {
     MessageReceived(Message),
     // TODO: do like refresh contact list from sqlite instead
     AddContact(Contact),
+    EditContact(Contact),
 }
 pub struct Tui {
     pub terminal: ratatui::DefaultTerminal,
@@ -201,6 +202,18 @@ async fn handle_event(app: &mut App, event: Event) {
             // TODO: actually handle
             if !app.contacts.contains(&contact) {
                 app.contacts.push(contact);
+            }
+            return;
+        }
+        Event::EditContact(contact) => {
+            // TODO: actually handle
+            if let Some(idx) = app
+                .contacts
+                .iter()
+                .position(|x| x.peer_id == contact.peer_id)
+            {
+                let c = app.contacts.get_mut(idx).expect("unreachable");
+                *c = contact;
             }
             return;
         }
