@@ -37,6 +37,7 @@ pub enum Event {
     Resize(u16, u16),
     MessageReceived(Message),
     // TODO: do like refresh contact list from sqlite instead
+    ReloadContacts(Vec<Contact>),
     AddContact(Contact),
     EditContact(Contact),
 }
@@ -154,10 +155,12 @@ async fn handle_event(app: &mut App, event: Event) {
                 return;
             }
             (Key::LEFT, KeyModifiers::SHIFT) => {
+                tracing::info!("changing selected tab");
                 app.selected_tab.left();
                 return;
             }
             (Key::RIGHT, KeyModifiers::SHIFT) => {
+                tracing::info!("changing selected tab");
                 app.selected_tab.right();
                 return;
             }
@@ -172,20 +175,20 @@ async fn handle_event(app: &mut App, event: Event) {
 
                         match app.selected_tab {
                             Tabline::Chatting(c) => Tabline::Chatting(c.left()),
-                            Tabline::FriendRequests(f) => unimplemented!(),
+                            Tabline::FriendRequests(f) => Tabline::FriendRequests(f),
                         }
                     }
                     Key::RIGHT => match app.selected_tab {
                         Tabline::Chatting(c) => Tabline::Chatting(c.right()),
-                        Tabline::FriendRequests(f) => unimplemented!(),
+                        Tabline::FriendRequests(f) => Tabline::FriendRequests(f),
                     },
                     Key::UP => match app.selected_tab {
                         Tabline::Chatting(c) => Tabline::Chatting(c.up()),
-                        Tabline::FriendRequests(f) => unimplemented!(),
+                        Tabline::FriendRequests(f) => Tabline::FriendRequests(f.up()),
                     },
                     Key::DOWN => match app.selected_tab {
                         Tabline::Chatting(c) => Tabline::Chatting(c.down()),
-                        Tabline::FriendRequests(f) => unimplemented!(),
+                        Tabline::FriendRequests(f) => Tabline::FriendRequests(f.down()),
                     },
                     _ => unreachable!(),
                 };
@@ -203,6 +206,10 @@ async fn handle_event(app: &mut App, event: Event) {
             if !app.contacts.contains(&contact) {
                 app.contacts.push(contact);
             }
+            return;
+        }
+        Event::ReloadContacts(contacts) => {
+            app.contacts = contacts;
             return;
         }
         Event::EditContact(contact) => {
@@ -246,7 +253,7 @@ async fn handle_chat(app: &mut App, event: Event) {
     if let Event::Key(key) = event {
         match key.code {
             KeyCode::Backspace => {
-                app.chat_input.pop();
+                app.buffer.pop();
             }
             KeyCode::Enter => {
                 let receiver = app
@@ -254,7 +261,7 @@ async fn handle_chat(app: &mut App, event: Event) {
                     .get(app.selected_contact.selected().unwrap())
                     .unwrap();
                 app.client
-                    .send_message(receiver.peer_id, app.chat_input.clone())
+                    .send_message(receiver.peer_id, app.buffer.clone())
                     .await;
                 // add the message to our chat log
                 app.chat.push(Message {
@@ -262,14 +269,14 @@ async fn handle_chat(app: &mut App, event: Event) {
                         peer_id: app.client.id,
                         name: "You".to_string(),
                     },
-                    content: app.chat_input.clone(),
+                    content: app.buffer.clone(),
                     id: uuid::Uuid::new_v4(),
                     status: types::MessageStatus::SentOffNotRead,
                 });
                 // clear the chat input
-                app.chat_input.clear();
+                app.buffer.clear();
             }
-            Char(ch) => app.chat_input.push(ch),
+            Char(ch) => app.buffer.push(ch),
             _ => unimplemented!(),
         }
     }
@@ -315,6 +322,20 @@ impl MoveHorizontal for Tabline {
         self
     }
 }
+impl MoveVertical for FriendRequestPage {
+    fn up(self) -> Self {
+        match self {
+            Self::RequestList => Self::Search,
+            Self::Search => Self::RequestList,
+        }
+    }
+    fn down(self) -> Self {
+        match self {
+            Self::RequestList => Self::Search,
+            Self::Search => Self::RequestList,
+        }
+    }
+}
 impl MoveHorizontal for ContactPage {
     fn left(self) -> Self {
         match self {
@@ -358,59 +379,62 @@ enum FriendRequestPage {
     Search,
 }
 fn ui(f: &mut Frame, app: &mut App) {
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(vec![Constraint::Length(3), Constraint::Fill(1)])
-        .split(f.area());
-    // Tabline
-    let tabline = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
-        .split(layout[0].offset(ratatui::layout::Offset { x: 0, y: 1 }));
-    f.render_widget(Paragraph::new("Chatting").centered(), tabline[0]);
-    f.render_widget(Paragraph::new("Friend requests").centered(), tabline[1]);
+    match app.selected_tab {
+        Tabline::Chatting(_) => {
+            let layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![Constraint::Length(3), Constraint::Fill(1)])
+                .split(f.area());
+            // Tabline
+            let tabline = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(layout[0].offset(ratatui::layout::Offset { x: 0, y: 1 }));
+            f.render_widget(Paragraph::new("Chatting").centered(), tabline[0]);
+            f.render_widget(Paragraph::new("Friend requests").centered(), tabline[1]);
 
-    let main_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(vec![Constraint::Percentage(20), Constraint::Fill(1)])
-        .split(layout[1]);
-    let chat_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(vec![Constraint::Fill(1), Constraint::Length(3)])
-        .split(main_layout[1]);
-    // contacts
-    let contact_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(vec![Constraint::Length(2), Constraint::Fill(1)])
-        .split(main_layout[0]);
+            let main_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(vec![Constraint::Percentage(20), Constraint::Fill(1)])
+                .split(layout[1]);
+            let chat_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![Constraint::Fill(1), Constraint::Length(3)])
+                .split(main_layout[1]);
+            // contacts
+            let contact_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(vec![Constraint::Length(2), Constraint::Fill(1)])
+                .split(main_layout[0]);
 
-    let contact_list = List::new(app.contacts.iter().map(|c| c.name.clone()))
-        .block(Block::bordered().title("Contacts"))
-        .style(Style::new().white())
-        .highlight_style(Style::new().italic())
-        .highlight_symbol(">>")
-        .repeat_highlight_symbol(true)
-        .direction(ListDirection::TopToBottom);
-    f.render_stateful_widget(contact_list, contact_layout[1], &mut app.selected_contact);
+            let contact_list = List::new(app.contacts.iter().map(|c| c.name.clone()))
+                .block(Block::bordered().title("Contacts"))
+                .style(Style::new().white())
+                .highlight_style(Style::new().italic())
+                .highlight_symbol(">>")
+                .repeat_highlight_symbol(true)
+                .direction(ListDirection::TopToBottom);
+            f.render_stateful_widget(contact_list, contact_layout[1], &mut app.selected_contact);
 
-    let vertical_scroll = app.selected_contact.selected().unwrap_or(0); // from app state
-    let mut scrollbar_state =
-        ScrollbarState::new(contact_layout[1].y.into()).position(vertical_scroll);
-    let contact_scroll_bar =
-        Scrollbar::default().orientation(ratatui::widgets::ScrollbarOrientation::VerticalLeft);
+            let vertical_scroll = app.selected_contact.selected().unwrap_or(0); // from app state
+            let mut scrollbar_state =
+                ScrollbarState::new(contact_layout[1].y.into()).position(vertical_scroll);
+            let contact_scroll_bar = Scrollbar::default()
+                .orientation(ratatui::widgets::ScrollbarOrientation::VerticalLeft);
 
-    f.render_stateful_widget(contact_scroll_bar, contact_layout[0], &mut scrollbar_state);
-
-    // chat
-    let chat_input =
-        Paragraph::new(format!(" {} {}", ">", app.chat_input.clone())).block(Block::bordered());
-    let messages = app
-        .chat
-        .iter()
-        .map(|m| Text::raw(format!("{}: {}", m.sender.name, m.content)));
-    let chat_log = List::new(messages).block(Block::bordered());
-    f.render_widget(chat_log, chat_layout[0]);
-    f.render_widget(chat_input, chat_layout[1]);
+            f.render_stateful_widget(contact_scroll_bar, contact_layout[0], &mut scrollbar_state);
+            let chat_input =
+                Paragraph::new(format!(" {} {}", ">", app.buffer.clone())).block(Block::bordered());
+            let messages = app
+                .chat
+                .iter()
+                .map(|m| Text::raw(format!("{}: {}", m.sender.name, m.content)));
+            let chat_log = List::new(messages).block(Block::bordered());
+            f.render_widget(chat_log, chat_layout[0]);
+            f.render_widget(chat_input, chat_layout[1]);
+        }
+        Tabline::FriendRequests(_) => {} // chat
+    }
     // friend list
 }
 // App state
@@ -420,7 +444,7 @@ struct App {
     contacts: Vec<Contact>,
     should_quit: bool,
     chat: Vec<Message>,
-    chat_input: String,
+    buffer: String,
     client: Client,
     token: CancellationToken,
 }
@@ -452,7 +476,7 @@ pub async fn run(client: Client, token: CancellationToken, mut tui: Tui) -> anyh
         //     status: types::MessageStatus::ReceivedRead,
         // }
         ],
-        chat_input: String::new(),
+        buffer: String::new(),
         token,
     };
 
