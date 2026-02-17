@@ -2,7 +2,7 @@ mod db;
 mod network;
 mod settings;
 mod tui;
-use crate::settings::get_config_save_file_path;
+use crate::settings::{create_config_path, get_config_save_file_path};
 use crate::tui::Tui;
 use crate::tui::types::Contact;
 use crate::{
@@ -19,7 +19,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
-
+    create_config_path().unwrap();
     // TODO: add an actual sqlite file
     let sqlite =
         tokio_rusqlite::Connection::open(get_config_save_file_path(settings::SaveFile::Database))

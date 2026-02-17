@@ -56,7 +56,6 @@ impl Settings {
             .iter()
             .map(|(name, setting)| (*name, setting.clone()))
             .collect();
-        create_config_path().unwrap();
         // TODO: If there is no configuration we can return
         let settings_path = get_config_save_file_path(SaveFile::Settings);
         let settings_json = read_to_string(&settings_path).await;
@@ -99,7 +98,7 @@ impl Settings {
         std::fs::write(settings_path, serialized).expect("failed to write settings");
     }
 }
-fn create_config_path() -> std::io::Result<()> {
+pub(crate) fn create_config_path() -> std::io::Result<()> {
     let proj_dir =
         ProjectDirs::from("com", "Mistr", "p2pchat").expect("Couldnt determine directories");
     create_dir_all(proj_dir.config_dir())?;
