@@ -57,7 +57,7 @@ impl Settings {
             .map(|(name, setting)| (*name, setting.clone()))
             .collect();
         // TODO: If there is no configuration we can return
-        let settings_path = get_config_save_file_path(SaveFile::Settings);
+        let settings_path = get_save_file_path(SaveFile::Settings);
         let settings_json = read_to_string(&settings_path).await;
         let json = match settings_json {
             Ok(settings) => settings,
@@ -91,30 +91,33 @@ impl Settings {
         user_settings
     }
     pub async fn save(settings: &HashMap<SettingName, Setting>) {
-        let settings_path = get_config_save_file_path(SaveFile::Settings);
+        let settings_path = get_save_file_path(SaveFile::Settings);
         tracing::info!("saving to path: {:?}", settings_path);
         let serialized = serde_json::to_string::<HashMap<SettingName, Setting>>(settings)
             .expect("failed to serialize settings");
         std::fs::write(settings_path, serialized).expect("failed to write settings");
     }
 }
-pub(crate) fn create_config_path() -> std::io::Result<()> {
+pub(crate) fn create_project_dirs() -> std::io::Result<()> {
     let proj_dir =
         ProjectDirs::from("com", "Mistr", "p2pchat").expect("Couldnt determine directories");
     create_dir_all(proj_dir.config_dir())?;
+    create_dir_all(proj_dir.data_dir())?;
     Ok(())
 }
 
-pub(crate) fn get_config_save_file_path(savefile: SaveFile) -> PathBuf {
+pub(crate) fn get_save_file_path(savefile: SaveFile) -> PathBuf {
     let proj_dirs =
         ProjectDirs::from("com", "Mistr", "p2pchat").expect("Couldnt determine directories");
-    proj_dirs.config_dir().join(
-        SAVE_FILES
-            .iter()
-            .find(|x| x.0 == savefile)
-            .expect("Save file path not defined")
-            .1,
-    )
+    let file_name = SAVE_FILES
+        .iter()
+        .find(|x| x.0 == savefile)
+        .expect("Save file path not defined")
+        .1;
+    match savefile {
+        SaveFile::Settings => proj_dirs.config_dir().join(file_name),
+        SaveFile::Database => proj_dirs.data_dir().join(file_name),
+    }
 }
 static REQUIRED_SETTINGS: &[(SettingName, Setting)] = &[(
     SettingName::Name,

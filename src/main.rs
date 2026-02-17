@@ -2,15 +2,11 @@ mod db;
 mod network;
 mod settings;
 mod tui;
-use crate::settings::{create_config_path, get_config_save_file_path};
+use crate::settings::{create_project_dirs, get_save_file_path};
 use crate::tui::Tui;
-use crate::tui::types::Contact;
-use crate::{
-    network::Event,
-    settings::{Setting, Settings},
-};
-use libp2p::{PeerId, identity::PublicKey, identity::ed25519};
-use std::{collections::HashMap, error::Error, sync::Arc};
+use crate::{network::Event, settings::Settings};
+use libp2p::identity::PublicKey;
+use std::{error::Error, sync::Arc};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
@@ -19,12 +15,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
-    create_config_path().unwrap();
+    create_project_dirs().unwrap();
     // TODO: add an actual sqlite file
-    let sqlite =
-        tokio_rusqlite::Connection::open(get_config_save_file_path(settings::SaveFile::Database))
-            .await
-            .expect("Couldnt open sqlite connection");
+    let sqlite = tokio_rusqlite::Connection::open(get_save_file_path(settings::SaveFile::Database))
+        .await
+        .expect("Couldnt open sqlite connection");
     // let sqlite = tokio_rusqlite::Connection::open_in_memory()
     //     .await
     //     .expect("Couldnt open sqlite connection");
