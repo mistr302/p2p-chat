@@ -25,8 +25,8 @@ use crate::{
         signable::sign,
     },
     settings::{Setting, SettingName, SettingValue},
-    tui::Event::EditContact,
     tui::types::Contact,
+    tui::types::Event::EditContact,
 };
 pub mod chat;
 pub mod friends;
@@ -39,7 +39,7 @@ pub enum Command {
 pub(crate) async fn new(
     sqlite_conn: Connection,
     settings: Arc<RwLock<HashMap<SettingName, Setting>>>,
-    tui_tx: UnboundedSender<crate::tui::Event>,
+    tui_tx: UnboundedSender<crate::tui::types::Event>,
 ) -> (EventLoop, Client, mpsc::Receiver<Event>) {
     // TODO: Confiugre properly & handle errors
     // Dont generate identities on every run, create a store
@@ -130,7 +130,7 @@ pub struct EventLoop {
     settings: Arc<tokio::sync::RwLock<HashMap<SettingName, Setting>>>,
     keys: Keypair,
     sqlite_conn: Connection,
-    tui_tx: UnboundedSender<crate::tui::Event>,
+    tui_tx: UnboundedSender<crate::tui::types::Event>,
     client: Client,
 }
 #[derive(Clone)]
@@ -162,7 +162,7 @@ impl EventLoop {
                     tracing::info!("{peer_id} peer connected!");
                     // Maybe dial and get locally set name
                     if !known.contains(&peer_id) {
-                        let _ = self.tui_tx.send(crate::tui::Event::AddContact(
+                        let _ = self.tui_tx.send(crate::tui::types::Event::AddContact(
                             crate::tui::types::Contact {
                                 peer_id,
                                 name: "Anonymous".to_string(),

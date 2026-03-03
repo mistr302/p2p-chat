@@ -1,5 +1,7 @@
 pub mod types;
 mod widgets;
+use crate::network::Client;
+use crate::tui::types::Contact;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
@@ -16,39 +18,10 @@ use ratatui::widgets::{Block, List, ListDirection, ListState, Scrollbar, Scrollb
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
-use types::Message;
-
-use crate::network::Client;
-use crate::tui::types::Contact;
-
-#[derive(Clone, Debug)]
-pub enum Event {
-    Init,
-    Quit,
-    Error,
-    Closed,
-    Tick,
-    Render,
-    FocusGained,
-    FocusLost,
-    Paste(String),
-    Key(KeyEvent),
-    Mouse(MouseEvent),
-    Resize(u16, u16),
-    MessageReceived(Message),
-    // TODO: do like refresh contact list from sqlite instead
-    ReloadContacts(Vec<Contact>),
-    AddContact(Contact),
-    EditContact(Contact),
-}
-pub struct Tui {
-    pub terminal: ratatui::DefaultTerminal,
-    pub task: Option<JoinHandle<()>>,
-    pub event_rx: UnboundedReceiver<Event>,
-    pub event_tx: UnboundedSender<Event>,
-    pub frame_rate: f64,
-    pub tick_rate: f64,
-}
+use types::{
+    App, ContactPage, Event, FriendRequestPage, Key, Message, MoveHorizontal, MoveVertical,
+    Tabline, Tui,
+};
 
 impl Tui {
     pub fn start(&mut self) {
@@ -137,13 +110,6 @@ impl Tui {
         ratatui::restore();
     }
 }
-struct Key;
-impl Key {
-    const LEFT: KeyCode = Char('h');
-    const RIGHT: KeyCode = Char('l');
-    const UP: KeyCode = Char('k');
-    const DOWN: KeyCode = Char('j');
-}
 async fn handle_event(app: &mut App, event: Event) {
     // switch tabline -> SHIFT + H/L
     // switch between selectable widgets -> CTRL + H/J/K/L
@@ -154,14 +120,14 @@ async fn handle_event(app: &mut App, event: Event) {
                 app.token.cancel();
                 return;
             }
-            (Key::LEFT, KeyModifiers::SHIFT) => {
-                tracing::info!("changing selected tab");
-                app.selected_tab.left();
+            (Char('H'), KeyModifiers::SHIFT) => {
+                tracing::info!("changing selected tab {:?}", app.selected_tab);
+                app.selected_tab = app.selected_tab.left();
                 return;
             }
-            (Key::RIGHT, KeyModifiers::SHIFT) => {
-                tracing::info!("changing selected tab");
-                app.selected_tab.right();
+            (Char('L'), KeyModifiers::SHIFT) => {
+                tracing::info!("changing selected tab {:?}", app.selected_tab);
+                app.selected_tab = app.selected_tab.right();
                 return;
             }
             (Key::LEFT | Key::RIGHT | Key::UP | Key::DOWN, KeyModifiers::CONTROL) => {
@@ -290,109 +256,21 @@ fn handle_request_list(app: &mut App, event: Event) {
 fn handle_search(app: &mut App, event: Event) {
     unimplemented!();
 }
-trait MoveHorizontal {
-    fn left(self) -> Self;
-    fn right(self) -> Self;
-}
-trait MoveVertical {
-    fn up(self) -> Self;
-    fn down(self) -> Self;
-}
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Tabline {
-    Chatting(ContactPage),
-    FriendRequests(FriendRequestPage),
-}
-impl Default for Tabline {
-    fn default() -> Self {
-        Self::Chatting(ContactPage::default())
-    }
-}
-impl MoveHorizontal for Tabline {
-    fn left(self) -> Self {
-        if let Self::FriendRequests(_) = self {
-            return Self::Chatting(ContactPage::default());
-        }
-        self
-    }
-    fn right(self) -> Self {
-        if let Self::Chatting(_) = self {
-            return Self::FriendRequests(FriendRequestPage::default());
-        }
-        self
-    }
-}
-impl MoveVertical for FriendRequestPage {
-    fn up(self) -> Self {
-        match self {
-            Self::RequestList => Self::Search,
-            Self::Search => Self::RequestList,
-        }
-    }
-    fn down(self) -> Self {
-        match self {
-            Self::RequestList => Self::Search,
-            Self::Search => Self::RequestList,
-        }
-    }
-}
-impl MoveHorizontal for ContactPage {
-    fn left(self) -> Self {
-        match self {
-            Self::Chat => Self::ContactList,
-            Self::CallButton => Self::ContactList,
-            _ => self,
-        }
-    }
-    fn right(self) -> Self {
-        match self {
-            Self::ContactList => Self::Chat,
-            _ => self,
-        }
-    }
-}
-impl MoveVertical for ContactPage {
-    fn up(self) -> Self {
-        match self {
-            Self::Chat => Self::CallButton,
-            _ => self,
-        }
-    }
-    fn down(self) -> Self {
-        match self {
-            Self::CallButton => Self::Chat,
-            _ => self,
-        }
-    }
-}
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
-enum ContactPage {
-    #[default]
-    ContactList,
-    Chat,
-    CallButton,
-}
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
-enum FriendRequestPage {
-    #[default]
-    RequestList,
-    Search,
-}
 fn ui(f: &mut Frame, app: &mut App) {
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(vec![Constraint::Length(3), Constraint::Fill(1)])
+        .split(f.area());
+    // Tabline
+    let tabline = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(layout[0].offset(ratatui::layout::Offset { x: 0, y: 1 }));
+
+    f.render_widget(Paragraph::new("Chatting").centered(), tabline[0]);
+    f.render_widget(Paragraph::new("Friend requests").centered(), tabline[1]);
     match app.selected_tab {
         Tabline::Chatting(_) => {
-            let layout = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(vec![Constraint::Length(3), Constraint::Fill(1)])
-                .split(f.area());
-            // Tabline
-            let tabline = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints(vec![Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(layout[0].offset(ratatui::layout::Offset { x: 0, y: 1 }));
-            f.render_widget(Paragraph::new("Chatting").centered(), tabline[0]);
-            f.render_widget(Paragraph::new("Friend requests").centered(), tabline[1]);
-
             let main_layout = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints(vec![Constraint::Percentage(20), Constraint::Fill(1)])
@@ -433,21 +311,17 @@ fn ui(f: &mut Frame, app: &mut App) {
             f.render_widget(chat_log, chat_layout[0]);
             f.render_widget(chat_input, chat_layout[1]);
         }
-        Tabline::FriendRequests(_) => {} // chat
+        Tabline::FriendRequests(_) => {
+            let main_layout = Layout::default().split(layout[1]);
+            // friend req
+            let incoming_friend_request_list = 0;
+            let search_input = 0;
+            let result_list = 0;
+        } // chat
     }
     // friend list
 }
 // App state
-struct App {
-    selected_tab: Tabline,
-    selected_contact: ListState,
-    contacts: Vec<Contact>,
-    should_quit: bool,
-    chat: Vec<Message>,
-    buffer: String,
-    client: Client,
-    token: CancellationToken,
-}
 pub async fn run(client: Client, token: CancellationToken, mut tui: Tui) -> anyhow::Result<()> {
     // ratatui terminal
     tui.start();
@@ -457,25 +331,9 @@ pub async fn run(client: Client, token: CancellationToken, mut tui: Tui) -> anyh
         selected_tab: Tabline::default(),
         should_quit: false,
         client,
-        contacts: vec![
-            // Contact {
-            //     name: "Mark".to_string(),
-            //     peer_id: PeerId::random(),
-            // },
-            // "Zuckerlizard".to_string(),
-        ],
+        contacts: Vec::new(),
         selected_contact: ListState::default().with_selected(Some(0)),
-        chat: vec![
-        //     Message {
-        //     sender: Contact {
-        //         peer_id: PeerId::random(),
-        //         name: "Mark".to_string(),
-        //     },
-        //     content: "adadadada adadad".to_string(),
-        //     id: uuid::Uuid::new_v4(),
-        //     status: types::MessageStatus::ReceivedRead,
-        // }
-        ],
+        chat: Vec::new(),
         buffer: String::new(),
         token,
     };

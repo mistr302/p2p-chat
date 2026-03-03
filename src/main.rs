@@ -3,7 +3,7 @@ mod network;
 mod settings;
 mod tui;
 use crate::settings::{create_project_dirs, get_save_file_path};
-use crate::tui::Tui;
+use crate::tui::types::Tui;
 use crate::{network::Event, settings::Settings};
 use libp2p::identity::PublicKey;
 use std::{error::Error, sync::Arc};
@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         // TODO: save to sqlite
 
                         // send to tui
-                        let _ = tui_tx.send(crate::tui::Event::MessageReceived(message));
+                        let _ = tui_tx.send(crate::tui::types::Event::MessageReceived(message));
                     }
                     Event::OutboundMessageReceived { message_id } => {
                         tracing::info!("{} message was received!", message_id);
