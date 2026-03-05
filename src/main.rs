@@ -2,13 +2,29 @@ mod db;
 mod network;
 mod settings;
 mod tui;
-use crate::settings::{create_project_dirs, get_save_file_path};
+use crate::settings::{SettingName, SettingValue, create_project_dirs, get_save_file_path};
 use crate::tui::types::Tui;
 use crate::{network::Event, settings::Settings};
 use libp2p::identity::PublicKey;
+use std::io::{self, Write};
 use std::{error::Error, sync::Arc};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
+
+fn prompt_for_name() -> io::Result<String> {
+    let mut input = String::new();
+    loop {
+        input.clear();
+        print!("Enter your display name: ");
+        io::stdout().flush()?;
+        io::stdin().read_line(&mut input)?;
+        let name = input.trim();
+        if !name.is_empty() {
+            return Ok(name.to_string());
+        }
+        println!("Name cannot be empty.");
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -27,8 +43,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .expect("Failed to migrate database");
 
-    let settings = Settings::load().await;
-    // Settings::save(&settings).await;
+    let mut settings = Settings::load().await;
+    let needs_name = match settings.get(&SettingName::Name) {
+        Some(setting) => !matches!(setting.get_value(), SettingValue::String(Some(_))),
+        None => true,
+    };
+    if needs_name {
+        let name = prompt_for_name()?;
+        let setting = settings
+            .get_mut(&SettingName::Name)
+            .expect("name setting to exist");
+        setting.set_value(SettingValue::String(Some(name)))?;
+        Settings::save(&settings).await;
+    }
     let tui = Tui::new();
     let tui_tx = tui.event_tx.clone();
 
