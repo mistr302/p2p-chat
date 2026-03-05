@@ -12,7 +12,10 @@ use ratatui::crossterm::event::KeyCode::Char;
 use ratatui::crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::Style;
+use ratatui::text::Line;
+use ratatui::text::Span;
 use ratatui::text::Text;
+use ratatui::widgets::ListItem;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::{Block, List, ListDirection, ListState, Scrollbar, ScrollbarState};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -132,18 +135,10 @@ async fn handle_event(app: &mut App, event: Event) {
             }
             (Key::LEFT | Key::RIGHT | Key::UP | Key::DOWN, KeyModifiers::CONTROL) => {
                 app.selected_tab = match key.code {
-                    Key::LEFT => {
-                        tracing::info!("Pressed LEFT + CONTROL");
-                        if app.selected_tab == Tabline::Chatting(ContactPage::Chat) {
-                            tracing::info!("Is on chat should transition to contacts");
-                        }
-                        tracing::info!("{:?}", app.selected_tab);
-
-                        match app.selected_tab {
-                            Tabline::Chatting(c) => Tabline::Chatting(c.left()),
-                            Tabline::FriendRequests(f) => Tabline::FriendRequests(f),
-                        }
-                    }
+                    Key::LEFT => match app.selected_tab {
+                        Tabline::Chatting(c) => Tabline::Chatting(c.left()),
+                        Tabline::FriendRequests(f) => Tabline::FriendRequests(f),
+                    },
                     Key::RIGHT => match app.selected_tab {
                         Tabline::Chatting(c) => Tabline::Chatting(c.right()),
                         Tabline::FriendRequests(f) => Tabline::FriendRequests(f),
@@ -254,7 +249,20 @@ fn handle_request_list(app: &mut App, event: Event) {
     unimplemented!();
 }
 fn handle_search(app: &mut App, event: Event) {
-    unimplemented!();
+    if let Event::Key(e) = event {
+        match e.code {
+            KeyCode::Enter => {
+                todo!();
+            }
+            KeyCode::Backspace => {
+                app.friend_search_buffer.pop();
+            }
+            Char(ch) => {
+                app.friend_search_buffer.push(ch);
+            }
+            _ => {}
+        }
+    }
 }
 fn ui(f: &mut Frame, app: &mut App) {
     let layout = Layout::default()
@@ -312,12 +320,76 @@ fn ui(f: &mut Frame, app: &mut App) {
             f.render_widget(chat_input, chat_layout[1]);
         }
         Tabline::FriendRequests(_) => {
-            let main_layout = Layout::default().split(layout[1]);
-            // friend req
-            let incoming_friend_request_list = 0;
-            let search_input = 0;
-            let result_list = 0;
-        } // chat
+            let main_layout = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints(vec![
+                    Constraint::Length(3), // search input
+                    Constraint::Fill(1),   // results / incoming split
+                ])
+                .split(layout[1]);
+
+            // Search input at top
+            let search_input =
+                Paragraph::new(format!(" {} {}", ">", app.friend_search_buffer.clone()))
+                    .block(Block::bordered().title("Search users"));
+            f.render_widget(search_input, main_layout[0]);
+
+            // Split bottom into incoming requests (left) and search results (right)
+            let bottom_layout = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(vec![Constraint::Percentage(40), Constraint::Fill(1)])
+                .split(main_layout[1]);
+
+            // Incoming friend requests list
+            let incoming_items: Vec<ListItem> = app
+                .incoming_requests
+                .iter()
+                .map(|r| {
+                    ListItem::new(Line::from(vec![
+                        Span::raw(r.name.clone()),
+                        Span::styled("  [A] Accept  [D] Deny", Style::new().dark_gray()),
+                    ]))
+                })
+                .collect();
+
+            let incoming_list = List::new(incoming_items)
+                .block(Block::bordered().title("Incoming Requests"))
+                .style(Style::new().white())
+                .highlight_style(Style::new().italic().yellow())
+                .highlight_symbol(">> ")
+                .direction(ListDirection::TopToBottom);
+
+            f.render_stateful_widget(
+                incoming_list,
+                bottom_layout[0],
+                &mut app.selected_incoming_request,
+            );
+
+            // Search results list
+            let result_items: Vec<ListItem> = app
+                .friend_search_results
+                .iter()
+                .map(|r| {
+                    ListItem::new(Line::from(vec![
+                        Span::raw(r.name.clone()),
+                        Span::styled("  [Enter] Send request", Style::new().dark_gray()),
+                    ]))
+                })
+                .collect();
+
+            let result_list = List::new(result_items)
+                .block(Block::bordered().title("Search Results"))
+                .style(Style::new().white())
+                .highlight_style(Style::new().italic().green())
+                .highlight_symbol(">> ")
+                .direction(ListDirection::TopToBottom);
+
+            f.render_stateful_widget(
+                result_list,
+                bottom_layout[1],
+                &mut app.selected_search_result,
+            );
+        }
     }
     // friend list
 }
@@ -335,6 +407,11 @@ pub async fn run(client: Client, token: CancellationToken, mut tui: Tui) -> anyh
         selected_contact: ListState::default().with_selected(Some(0)),
         chat: Vec::new(),
         buffer: String::new(),
+        friend_search_buffer: String::new(),
+        friend_search_results: vec![],
+        incoming_requests: vec![],
+        selected_incoming_request: ListState::default(),
+        selected_search_result: ListState::default(),
         token,
     };
 

@@ -16,6 +16,11 @@ pub(crate) struct App {
     pub buffer: String,
     pub client: Client,
     pub token: CancellationToken,
+    pub friend_search_buffer: String,
+    pub friend_search_results: Vec<Contact>,
+    pub incoming_requests: Vec<Contact>,
+    pub selected_incoming_request: ListState,
+    pub selected_search_result: ListState,
 }
 #[derive(Debug, Clone)]
 pub enum MessageStatus {
@@ -122,8 +127,9 @@ pub enum ContactPage {
 #[derive(Default, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FriendRequestPage {
     #[default]
-    RequestList,
     Search,
+    RequestList,
+    // ResultList,
 }
 pub(crate) struct Key;
 impl Key {
@@ -151,6 +157,8 @@ pub enum Event {
     ReloadContacts(Vec<Contact>),
     AddContact(Contact),
     EditContact(Contact),
+    SearchResult(Vec<Contact>),
+    LoadFriendRequests(Vec<Contact>),
 }
 pub struct Tui {
     pub terminal: ratatui::DefaultTerminal,
