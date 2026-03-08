@@ -11,6 +11,12 @@ CREATE TABLE IF NOT EXISTS incoming_friend_requests (
     peer_id TEXT NOT NULL,
     FOREIGN KEY (peer_id) REFERENCES contacts(peer_id)
 );
+CREATE TABLE IF NOT EXISTS friends (
+    id INTEGER PRIMARY KEY,
+    peer_id TEXT PRIMARY KEY,
+    
+    FOREIGN KEY (peer_id) REFERENCES contacts(peer_id)
+);
 -- Contacts table
 CREATE TABLE IF NOT EXISTS contacts (
     peer_id TEXT PRIMARY KEY,
