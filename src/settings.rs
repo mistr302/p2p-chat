@@ -15,6 +15,7 @@ pub enum SettingValue {
     Int(i32),
     Bool(bool),
     String(Option<String>),
+    Bytes(Option<Vec<u8>>),
 }
 impl TryInto<String> for SettingValue {
     type Error = std::io::Error;
@@ -32,6 +33,7 @@ impl TryInto<String> for SettingValue {
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum SettingName {
     Name,
+    KeyPair,
 }
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Setting {
@@ -119,13 +121,22 @@ pub(crate) fn get_save_file_path(savefile: SaveFile) -> PathBuf {
         SaveFile::Database => proj_dirs.data_dir().join(file_name),
     }
 }
-static REQUIRED_SETTINGS: &[(SettingName, Setting)] = &[(
-    SettingName::Name,
-    Setting {
-        constraints: None,
-        value: SettingValue::String(None),
-    },
-)];
+static REQUIRED_SETTINGS: &[(SettingName, Setting)] = &[
+    (
+        SettingName::Name,
+        Setting {
+            constraints: None,
+            value: SettingValue::String(None),
+        },
+    ),
+    (
+        SettingName::KeyPair,
+        Setting {
+            constraints: None,
+            value: SettingValue::Bytes(None),
+        },
+    ),
+];
 #[derive(PartialEq)]
 pub(crate) enum SaveFile {
     Settings,

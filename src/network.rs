@@ -43,7 +43,31 @@ pub(crate) async fn new(
 ) -> (EventLoop, Client, mpsc::Receiver<Event>) {
     // TODO: Confiugre properly & handle errors
     // Dont generate identities on every run, create a store
-    let id = Keypair::generate_ed25519();
+
+    let id = {
+        let s = settings.read().await;
+        let s = s.get(&SettingName::KeyPair).unwrap();
+
+        let SettingValue::Bytes(s) = s.get_value() else {
+            unreachable!();
+        };
+
+        match s {
+            None => {
+                tracing::warn!("Keypair not located, generating a new one");
+                let w = settings.write().await;
+                let key = Keypair::generate_ed25519();
+                let s = key.to_protobuf_encoding().unwrap();
+                let setting = Setting {
+                    value: SettingValue::Bytes(Some(s)),
+                    constraints: None,
+                };
+                w.insert(SettingName::KeyPair, setting);
+                key
+            }
+            Some(s) => Keypair::ed25519_from_bytes(s.bytes().collect::<Vec<u8>>()).unwrap(),
+        }
+    };
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(id.clone())
         .with_tokio()
         .with_tcp(
