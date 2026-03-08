@@ -24,9 +24,8 @@ use crate::{
         friends::{FriendCommand, FriendRequest, FriendResponse},
         signable::sign,
     },
-    settings::{Setting, SettingName, SettingValue},
-    tui::types::Contact,
-    tui::types::Event::EditContact,
+    settings::{Setting, SettingName, SettingValue, Settings},
+    tui::types::{Contact, Event::EditContact},
 };
 pub mod chat;
 pub mod friends;
@@ -45,27 +44,27 @@ pub(crate) async fn new(
     // Dont generate identities on every run, create a store
 
     let id = {
-        let s = settings.read().await;
-        let s = s.get(&SettingName::KeyPair).unwrap();
+        let set = settings.read().await;
+        let get_keys = set.get(&SettingName::KeyPair).unwrap();
 
-        let SettingValue::Bytes(s) = s.get_value() else {
+        let SettingValue::Bytes(s) = settings.get_value() else {
             unreachable!();
         };
 
         match s {
             None => {
                 tracing::warn!("Keypair not located, generating a new one");
-                let w = settings.write().await;
+                let write_set = settings.write().await;
                 let key = Keypair::generate_ed25519();
                 let s = key.to_protobuf_encoding().unwrap();
-                let setting = Setting {
-                    value: SettingValue::Bytes(Some(s)),
-                    constraints: None,
-                };
-                w.insert(SettingName::KeyPair, setting);
+
+                write_set.insert(SettingName::KeyPair, SettingValue::Bytes(Some(s)));
+                Settings::save(set.into());
                 key
             }
-            Some(s) => Keypair::ed25519_from_bytes(s.bytes().collect::<Vec<u8>>()).unwrap(),
+            Some(s) => {
+                Keypair::from_protobuf_encoding(&s).expect("Couldnt parse the saved keypair")
+            }
         }
     };
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(id.clone())

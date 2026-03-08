@@ -35,26 +35,10 @@ pub enum SettingName {
     Name,
     KeyPair,
 }
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Setting {
-    constraints: Option<Vec<Constraint>>,
-    value: SettingValue,
-}
-impl Setting {
-    pub fn get_value(&self) -> &SettingValue {
-        &self.value
-    }
-    // TODO: Implement error if value doesnt comply with constraints
-    // std::io::ErrorKind::InvalidInput
-    pub fn set_value(&mut self, val: SettingValue) -> std::io::Result<()> {
-        self.value = val;
-        Ok(())
-    }
-}
 pub struct Settings;
 impl Settings {
-    pub async fn load() -> HashMap<SettingName, Setting> {
-        let settings: HashMap<SettingName, Setting> = REQUIRED_SETTINGS
+    pub async fn load() -> HashMap<SettingName, SettingValue> {
+        let settings: HashMap<SettingName, SettingValue> = REQUIRED_SETTINGS
             .iter()
             .map(|(name, setting)| (*name, setting.clone()))
             .collect();
@@ -72,14 +56,15 @@ impl Settings {
                 return settings;
             }
         };
-        let mut user_settings = match serde_json::from_str::<HashMap<SettingName, Setting>>(&json) {
-            Ok(s) => s,
-            Err(err) => {
-                tracing::error!("{:?}", err);
-                tracing::warn!("Defaulting to predefined settings");
-                return settings;
-            }
-        };
+        let mut user_settings =
+            match serde_json::from_str::<HashMap<SettingName, SettingValue>>(&json) {
+                Ok(s) => s,
+                Err(err) => {
+                    tracing::error!("{:?}", err);
+                    tracing::warn!("Defaulting to predefined settings");
+                    return settings;
+                }
+            };
 
         // TODO: Set default values to missing options, enforce constraints
         for (opt_key, opt_val) in settings {
@@ -92,10 +77,10 @@ impl Settings {
         }
         user_settings
     }
-    pub async fn save(settings: &HashMap<SettingName, Setting>) {
+    pub async fn save(settings: &HashMap<SettingName, SettingValue>) {
         let settings_path = get_save_file_path(SaveFile::Settings);
         tracing::info!("saving to path: {:?}", settings_path);
-        let serialized = serde_json::to_string::<HashMap<SettingName, Setting>>(settings)
+        let serialized = serde_json::to_string::<HashMap<SettingName, SettingValue>>(settings)
             .expect("failed to serialize settings");
         std::fs::write(settings_path, serialized).expect("failed to write settings");
     }
@@ -121,21 +106,9 @@ pub(crate) fn get_save_file_path(savefile: SaveFile) -> PathBuf {
         SaveFile::Database => proj_dirs.data_dir().join(file_name),
     }
 }
-static REQUIRED_SETTINGS: &[(SettingName, Setting)] = &[
-    (
-        SettingName::Name,
-        Setting {
-            constraints: None,
-            value: SettingValue::String(None),
-        },
-    ),
-    (
-        SettingName::KeyPair,
-        Setting {
-            constraints: None,
-            value: SettingValue::Bytes(None),
-        },
-    ),
+static REQUIRED_SETTINGS: &[(SettingName, SettingValue)] = &[
+    (SettingName::Name, SettingValue::String(None)),
+    (SettingName::KeyPair, SettingValue::Bytes(None)),
 ];
 #[derive(PartialEq)]
 pub(crate) enum SaveFile {
