@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS incoming_friend_requests (
 -- Contacts table
 CREATE TABLE IF NOT EXISTS contacts (
     peer_id TEXT PRIMARY KEY,
+    discovery_type INTEGER NOT NULL,
     -- public_key
     name TEXT NOT NULL
 );
