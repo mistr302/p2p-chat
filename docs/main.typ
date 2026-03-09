@@ -39,7 +39,6 @@
 #let nobs = sym.space.nobreak
 
 #pagebreak(weak: true)
-#outline(title: heading(depth: 1, numbering: none, outlined: false)[Obsah])
 #pagebreak(weak: true)
 #align(center + horizon)[
 DELTA – Střední škola informatiky a ekonomie, s.r.o.
@@ -62,7 +61,8 @@ Zdokumentováno dne: 2026-01-11
 ]
 
 #pagebreak()
-
+#outline(title: heading(depth: 1, numbering: none, outlined: false)[Obsah])
+#pagebreak()
 = Úvod
 Chatovací aplikace má fungovat převážně decentralizovaně, což znamená, že každý peer by měl v ideálním případě komunikovat napřímo s tím s kým chce momentálně komunikovat.
 == Problém
@@ -135,7 +135,19 @@ X25519 je funkce eliptické křivky Diffie-Hellman (ECDH), která používá kř
  Odolnost proti útokům bočním kanálem – díky jednoduchosti návrhu a implementace.
  Lepší interoperabilita – široká podpora v moderních kryptografických knihovnách.
 @x25519
-=== KademliaDHT
+=== Circuit Relay
+Circuit relay je transportní protokol, který směruje provoz mezi dvěma peer zařízeními přes třetí stranu „relay“ peer.
+
+V mnoha případech nebudou peer zařízení schopna překonat NAT a/nebo firewall tak, aby byla veřejně přístupná. Nebo nemusí sdílet společné transportní protokoly, které by jim umožňovaly přímou komunikaci.
+
+Aby bylo možné používat architektury peer-to-peer i přes překážky připojení, jako je NAT, definuje libp2p protokol nazvaný p2p-circuit. Pokud peer není schopen naslouchat na veřejné adrese, může se připojit k reléovému peeru, který udrží dlouhodobé připojení otevřené. Ostatní peerové se budou moci připojit přes reléový peer pomocí adresy p2p-circuit, která předá provoz do jeho cíle.
+
+Protokol circuit relay je inspirován TURN, který je součástí sbírky technik NAT traversal Interactive Connectivity Establishment.
+@libp2p_circuit_relay
+=== Dcutr 
+Libp2p DCUtR (Direct Connection Upgrade through Relay) je protokol pro navazování přímých spojení mezi uzly prostřednictvím hole punching, bez signalizačního serveru.
+DCUtR zahrnuje synchronizaci a otevírání spojení k předpokládaným externím adresám každého peeru.
+@libp2p_dcutr
 === Multicast DNS
 mDNS, neboli multicast Domain Name System, je způsob, jakým uzly používají IP multicast k publikování a přijímání DNS záznamů RFC 6762 v rámci lokální sítě.
 mDNS se běžně používá v domácích sítích, aby se zařízení jako počítače, tiskárny a chytré televize mohly navzájem objevit a připojit.@libp2p-mdns
