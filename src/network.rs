@@ -24,7 +24,7 @@ use crate::{
         friends::{FriendCommand, FriendRequest, FriendResponse},
         signable::sign,
     },
-    settings::{Setting, SettingName, SettingValue, Settings},
+    settings::{SettingName, SettingValue, Settings},
     tui::types::{Contact, Event::EditContact},
 };
 pub mod chat;
@@ -37,29 +37,30 @@ pub enum Command {
 }
 pub(crate) async fn new(
     sqlite_conn: Connection,
-    settings: Arc<RwLock<HashMap<SettingName, Setting>>>,
+    settings: Arc<RwLock<HashMap<SettingName, SettingValue>>>,
     tui_tx: UnboundedSender<crate::tui::types::Event>,
 ) -> (EventLoop, Client, mpsc::Receiver<Event>) {
     // TODO: Confiugre properly & handle errors
     // Dont generate identities on every run, create a store
 
     let id = {
-        let set = settings.read().await;
+        let mut set = settings.write().await;
         let get_keys = set.get(&SettingName::KeyPair).unwrap();
 
-        let SettingValue::Bytes(s) = settings.get_value() else {
+        let SettingValue::Bytes(s) = get_keys.clone() else {
             unreachable!();
         };
 
         match s {
             None => {
                 tracing::warn!("Keypair not located, generating a new one");
-                let write_set = settings.write().await;
+                // let mut write_set = settings.write().await;
                 let key = Keypair::generate_ed25519();
                 let s = key.to_protobuf_encoding().unwrap();
 
-                write_set.insert(SettingName::KeyPair, SettingValue::Bytes(Some(s)));
-                Settings::save(set.into());
+                set.insert(SettingName::KeyPair, SettingValue::Bytes(Some(s)));
+
+                Settings::save(&set).await;
                 key
             }
             Some(s) => {
@@ -67,6 +68,7 @@ pub(crate) async fn new(
             }
         }
     };
+
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(id.clone())
         .with_tokio()
         .with_tcp(
@@ -150,7 +152,7 @@ pub struct EventLoop {
     swarm: Swarm<Behaviour>,
     command_rx: mpsc::Receiver<Command>,
     event_sender: mpsc::Sender<Event>,
-    settings: Arc<tokio::sync::RwLock<HashMap<SettingName, Setting>>>,
+    settings: Arc<tokio::sync::RwLock<HashMap<SettingName, SettingValue>>>,
     keys: Keypair,
     sqlite_conn: Connection,
     tui_tx: UnboundedSender<crate::tui::types::Event>,
@@ -159,7 +161,7 @@ pub struct EventLoop {
 #[derive(Clone)]
 pub(crate) struct Client {
     pub command_sender: mpsc::Sender<Command>,
-    settings: Arc<tokio::sync::RwLock<HashMap<SettingName, Setting>>>,
+    settings: Arc<tokio::sync::RwLock<HashMap<SettingName, SettingValue>>>,
     keys: Keypair,
     pub id: PeerId,
 }
@@ -266,7 +268,7 @@ impl EventLoop {
                                 channel,
                                 sign(
                                     FriendResponse::RequestName {
-                                        name: match name.unwrap().get_value() {
+                                        name: match name.unwrap() {
                                             SettingValue::String(val) => {
                                                 val.clone().unwrap_or("Anonymous".to_string())
                                             }
@@ -280,10 +282,8 @@ impl EventLoop {
                     }
                     FriendRequest::VerifyName { name } => {
                         let lock = self.settings.read().await;
-                        let SettingValue::String(Some(curr_name)) = lock
-                            .get(&SettingName::Name)
-                            .expect("name opt to exist")
-                            .get_value()
+                        let SettingValue::String(Some(curr_name)) =
+                            lock.get(&SettingName::Name).expect("name opt to exist")
                         else {
                             unimplemented!("");
                         };

@@ -45,15 +45,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut settings = Settings::load().await;
     let needs_name = match settings.get(&SettingName::Name) {
-        Some(setting) => !matches!(setting.get_value(), SettingValue::String(Some(_))),
+        Some(setting) => !matches!(setting, SettingValue::String(Some(_))),
         None => true,
     };
     if needs_name {
         let name = prompt_for_name()?;
-        let setting = settings
-            .get_mut(&SettingName::Name)
-            .expect("name setting to exist");
-        setting.set_value(SettingValue::String(Some(name)))?;
+        settings.insert(SettingName::Name, SettingValue::String(Some(name)));
         Settings::save(&settings).await;
     }
     let tui = Tui::new();
