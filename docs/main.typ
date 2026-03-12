@@ -110,7 +110,7 @@ QUIC je nový transportní protokol, který poskytuje vždy šifrované připoje
 
 QUIC je bezpečný transportní protokol pro všeobecné použití na aplikační vrstvě.
 
-Aplikační protokoly si vyměňují informace přes připojení QUIC prostřednictvím datových toků, které jsou uspořádané sekvence bajtů. 
+Aplikační protokoly si vyměňují informace přes připojení QUIC prostřednictvím datových toků, které jsou uspořádan sekvence bajtů. 
 
 Připojení QUIC nejsou striktně vázána na jednu síťovou cestu. Migrace připojení používá identifikátory připojení, aby umožnila přenos připojení na novou síťovou cestu.@quicrfc
 
