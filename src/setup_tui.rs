@@ -100,12 +100,12 @@ pub fn run_setup() -> anyhow::Result<()> {
                     (KeyCode::Backspace, _) => {
                         if let Some(idx) = selected_setting.selected() {
                             let def = &definitions[idx];
-                            if matches!(def.input, SettingInput::HumanInput) {
-                                if let Some(buf) = input_buffers.get_mut(&def.name) {
-                                    buf.pop();
-                                    apply_input_buffer(&mut settings, def, buf);
-                                    dirty = true;
-                                }
+                            if matches!(def.input, SettingInput::HumanInput)
+                                && let Some(buf) = input_buffers.get_mut(&def.name)
+                            {
+                                buf.pop();
+                                apply_input_buffer(&mut settings, def, buf);
+                                dirty = true;
                             }
                         }
                     }
@@ -117,26 +117,26 @@ pub fn run_setup() -> anyhow::Result<()> {
                                 settings.insert(def.name, generator());
                                 dirty = true;
                                 status = format!("Generating {}.", def.label);
-                            } else if matches!(def.input, SettingInput::HumanInput) {
-                                if let Some(buf) = input_buffers.get_mut(&def.name) {
-                                    buf.push(' ');
-                                    apply_input_buffer(&mut settings, def, buf);
-                                    dirty = true;
-                                }
+                            } else if matches!(def.input, SettingInput::HumanInput)
+                                && let Some(buf) = input_buffers.get_mut(&def.name)
+                            {
+                                buf.push(' ');
+                                apply_input_buffer(&mut settings, def, buf);
+                                dirty = true;
                             }
                         }
                     }
                     (KeyCode::Char(c), _) => {
-                        if !c.is_control() {
-                            if let Some(idx) = selected_setting.selected() {
-                                let def = &definitions[idx];
-                                if matches!(def.input, SettingInput::HumanInput) {
-                                    if let Some(buf) = input_buffers.get_mut(&def.name) {
-                                        buf.push(c);
-                                        apply_input_buffer(&mut settings, def, buf);
-                                        dirty = true;
-                                    }
-                                }
+                        if !c.is_control()
+                            && let Some(idx) = selected_setting.selected()
+                        {
+                            let def = &definitions[idx];
+                            if matches!(def.input, SettingInput::HumanInput)
+                                && let Some(buf) = input_buffers.get_mut(&def.name)
+                            {
+                                buf.push(c);
+                                apply_input_buffer(&mut settings, def, buf);
+                                dirty = true;
                             }
                         }
                     }
@@ -232,7 +232,6 @@ fn build_setting_items(
                         }
                     }
                     Some(SettingValue::Int(v)) => format!("{}", v),
-                    Some(SettingValue::String(Some(s))) => s.clone(),
                     _ => "missing".to_string(),
                 },
             };

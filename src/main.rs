@@ -33,6 +33,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .expect("Failed to migrate database");
 
     let settings = Settings::load();
+    // TODO: Check all required settings while loading and return result when loading
     let has_name = matches!(
         settings.get(&SettingName::Name),
         Some(SettingValue::String(Some(_)))

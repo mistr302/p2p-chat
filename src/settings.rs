@@ -94,6 +94,7 @@ impl Settings {
         // TODO: If there is no configuration we can return
         let settings_path = get_save_file_path(SaveFile::Settings);
         let settings_json = read_to_string(&settings_path);
+
         let json = match settings_json {
             Ok(settings) => settings,
             Err(err) => {
@@ -122,12 +123,7 @@ impl Settings {
                 user_settings.insert(opt_key, opt_val);
             }
         }
-        if let Some(SettingValue::Bytes(Some(bytes))) =
-            user_settings.get(&SettingName::KeyPair).cloned()
-        {
-            let encoded = general_purpose::STANDARD.encode(bytes);
-            user_settings.insert(SettingName::KeyPair, SettingValue::String(Some(encoded)));
-        }
+
         user_settings
     }
     pub fn save(settings: &HashMap<SettingName, SettingValue>) {
@@ -159,6 +155,7 @@ pub(crate) fn get_save_file_path(savefile: SaveFile) -> PathBuf {
         SaveFile::Database => proj_dirs.data_dir().join(file_name),
     }
 }
+
 #[derive(PartialEq)]
 pub(crate) enum SaveFile {
     Settings,
