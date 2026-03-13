@@ -1,6 +1,6 @@
 enum DiscoveryType {
-    MDNS,
-    TRACKER,
+    Mdns,
+    Tracker,
 }
 enum FriendRequestType {
     Incoming,

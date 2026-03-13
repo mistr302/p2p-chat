@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine as _};
 use futures::StreamExt;
 use libp2p::{
     PeerId, StreamProtocol, Swarm,
@@ -9,10 +10,7 @@ use libp2p::{
 };
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{
-    RwLock,
-    mpsc::{self, UnboundedSender},
-};
+use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio_rusqlite::Connection;
 use uuid::Uuid;
 
@@ -24,7 +22,7 @@ use crate::{
         friends::{FriendCommand, FriendRequest, FriendResponse},
         signable::sign,
     },
-    settings::{SettingName, SettingValue, Settings},
+    settings::{SettingName, SettingValue},
     tui::types::{Contact, Event::EditContact},
 };
 pub mod chat;
@@ -37,35 +35,24 @@ pub enum Command {
 }
 pub(crate) async fn new(
     sqlite_conn: Connection,
-    settings: Arc<RwLock<HashMap<SettingName, SettingValue>>>,
+    settings: Arc<HashMap<SettingName, SettingValue>>,
     tui_tx: UnboundedSender<crate::tui::types::Event>,
 ) -> (EventLoop, Client, mpsc::Receiver<Event>) {
     // TODO: Confiugre properly & handle errors
     // Dont generate identities on every run, create a store
 
-    let id = {
-        let mut set = settings.write().await;
-        let get_keys = set.get(&SettingName::KeyPair).unwrap();
-
-        let SettingValue::Bytes(s) = get_keys.clone() else {
-            unreachable!();
-        };
-
-        match s {
-            None => {
-                tracing::warn!("Keypair not located, generating a new one");
-                // let mut write_set = settings.write().await;
-                let key = Keypair::generate_ed25519();
-                let s = key.to_protobuf_encoding().unwrap();
-
-                set.insert(SettingName::KeyPair, SettingValue::Bytes(Some(s)));
-
-                Settings::save(&set).await;
-                key
-            }
-            Some(s) => {
-                Keypair::from_protobuf_encoding(&s).expect("Couldnt parse the saved keypair")
-            }
+    let id = match settings.get(&SettingName::KeyPair) {
+        Some(SettingValue::String(Some(s))) => {
+            let bytes = general_purpose::STANDARD
+                .decode(s)
+                .expect("Couldnt decode saved keypair");
+            Keypair::from_protobuf_encoding(&bytes).expect("Couldnt parse the saved keypair")
+        }
+        Some(SettingValue::Bytes(Some(s))) => {
+            Keypair::from_protobuf_encoding(s).expect("Couldnt parse the saved keypair")
+        }
+        _ => {
+            panic!("Keypair missing. Run `app-bin setup` to generate settings.");
         }
     };
 
@@ -152,7 +139,7 @@ pub struct EventLoop {
     swarm: Swarm<Behaviour>,
     command_rx: mpsc::Receiver<Command>,
     event_sender: mpsc::Sender<Event>,
-    settings: Arc<tokio::sync::RwLock<HashMap<SettingName, SettingValue>>>,
+    settings: Arc<HashMap<SettingName, SettingValue>>,
     keys: Keypair,
     sqlite_conn: Connection,
     tui_tx: UnboundedSender<crate::tui::types::Event>,
@@ -161,7 +148,7 @@ pub struct EventLoop {
 #[derive(Clone)]
 pub(crate) struct Client {
     pub command_sender: mpsc::Sender<Command>,
-    settings: Arc<tokio::sync::RwLock<HashMap<SettingName, SettingValue>>>,
+    settings: Arc<HashMap<SettingName, SettingValue>>,
     keys: Keypair,
     pub id: PeerId,
 }
@@ -259,8 +246,7 @@ impl EventLoop {
                     channel,
                 } => match request {
                     FriendRequest::RequestName => {
-                        let lock = self.settings.read().await;
-                        let name = lock.get(&SettingName::Name);
+                        let name = self.settings.get(&SettingName::Name);
                         self.swarm
                             .behaviour_mut()
                             .friends
@@ -281,9 +267,8 @@ impl EventLoop {
                             .expect("On Name request to be sent");
                     }
                     FriendRequest::VerifyName { name } => {
-                        let lock = self.settings.read().await;
                         let SettingValue::String(Some(curr_name)) =
-                            lock.get(&SettingName::Name).expect("name opt to exist")
+                            self.settings.get(&SettingName::Name).expect("name opt to exist")
                         else {
                             unimplemented!("");
                         };

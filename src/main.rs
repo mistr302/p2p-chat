@@ -1,36 +1,25 @@
 mod db;
 mod network;
 mod settings;
+mod setup_tui;
 mod tui;
 use crate::settings::{SettingName, SettingValue, create_project_dirs, get_save_file_path};
 use crate::tui::types::Tui;
 use crate::{network::Event, settings::Settings};
 use libp2p::identity::PublicKey;
-use std::io::{self, Write};
 use std::{error::Error, sync::Arc};
-use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-
-fn prompt_for_name() -> io::Result<String> {
-    let mut input = String::new();
-    loop {
-        input.clear();
-        print!("Enter your display name: ");
-        io::stdout().flush()?;
-        io::stdin().read_line(&mut input)?;
-        let name = input.trim();
-        if !name.is_empty() {
-            return Ok(name.to_string());
-        }
-        println!("Name cannot be empty.");
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
+    let mut args = std::env::args().skip(1);
+    if matches!(args.next().as_deref(), Some("setup")) {
+        setup_tui::run_setup()?;
+        return Ok(());
+    }
     create_project_dirs().unwrap();
     // TODO: add an actual sqlite file
     let sqlite = tokio_rusqlite::Connection::open(get_save_file_path(settings::SaveFile::Database))
@@ -43,20 +32,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .expect("Failed to migrate database");
 
-    let mut settings = Settings::load().await;
-    let needs_name = match settings.get(&SettingName::Name) {
-        Some(setting) => !matches!(setting, SettingValue::String(Some(_))),
-        None => true,
-    };
-    if needs_name {
-        let name = prompt_for_name()?;
-        settings.insert(SettingName::Name, SettingValue::String(Some(name)));
-        Settings::save(&settings).await;
+    let settings = Settings::load();
+    let has_name = matches!(
+        settings.get(&SettingName::Name),
+        Some(SettingValue::String(Some(_)))
+    );
+    let has_keypair = matches!(
+        settings.get(&SettingName::KeyPair),
+        Some(SettingValue::String(Some(_))) | Some(SettingValue::Bytes(Some(_)))
+    );
+    if !has_name || !has_keypair {
+        return Err("Missing settings. Run `app-bin setup` to configure.".into());
     }
     let tui = Tui::new();
     let tui_tx = tui.event_tx.clone();
 
-    let settings = Arc::new(RwLock::new(settings));
+    let settings = Arc::new(settings);
     let (event_loop, client, mut network_event) =
         network::new(sqlite.clone(), settings.clone(), tui_tx.clone()).await;
     let token = CancellationToken::new();
