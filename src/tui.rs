@@ -1,5 +1,7 @@
 pub mod types;
 mod widgets;
+use std::str::FromStr;
+
 use crate::network::Client;
 use crate::tui::types::Contact;
 use crossterm::event::KeyCode;
@@ -7,6 +9,7 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use futures::{FutureExt, StreamExt};
 use libp2p::PeerId;
+use num_enum::TryFromPrimitive;
 use ratatui::Frame;
 use ratatui::crossterm::event::KeyCode::Char;
 use ratatui::crossterm::event::{KeyEvent, MouseEvent};
@@ -20,6 +23,8 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::{Block, List, ListDirection, ListState, Scrollbar, ScrollbarState};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
+use tokio_rusqlite::fallible_iterator::FallibleIterator;
+use tokio_rusqlite::params;
 use tokio_util::sync::CancellationToken;
 use types::{
     App, ContactPage, Event, FriendRequestPage, Key, Message, MoveHorizontal, MoveVertical,
@@ -190,7 +195,7 @@ async fn handle_event(app: &mut App, event: Event) {
     };
     match &app.selected_tab {
         Tabline::Chatting(contact) => match contact {
-            ContactPage::ContactList => handle_contact_list(app, event),
+            ContactPage::ContactList => handle_contact_list(app, event).await,
             ContactPage::Chat => handle_chat(app, event).await,
             ContactPage::CallButton => handle_call_button(app, event),
         },
@@ -200,14 +205,57 @@ async fn handle_event(app: &mut App, event: Event) {
         },
     }
 }
-fn handle_contact_list(app: &mut App, event: Event) {
+fn get_message_log(
+    conn: &mut tokio_rusqlite::rusqlite::Connection,
+    peer_id: String,
+) -> tokio_rusqlite::Result<Vec<types::Message>> {
+    let sql = "SELECT m.id, m.content, m.status, c.name FROM messages AS m INNER JOIN contacts AS c ON m.contact_id = c.peer_id WHERE contact_id = ?";
+    let mut stmt = conn.prepare(sql).unwrap();
+
+    let mut rows = stmt.query(params![peer_id])?;
+    let log = Vec::new();
+    while let Ok(Some(r)) = rows.next() {
+        let m = types::Message {
+            id: uuid::Uuid::from_str(r.get::<usize, String>(0)?.as_ref()).unwrap(),
+            content: r.get(1)?,
+            status: crate::db::types::MessageStatus::try_from_primitive(r.get(2)?).unwrap(),
+            sender: types::Contact {
+                name: r.get(3)?,
+                peer_id: peer_id.to_string(),
+            },
+        };
+    }
+    Ok(log)
+}
+async fn handle_contact_list(app: &mut App, event: Event) {
     if let Event::Key(key) = event {
         match key.code {
             Key::RIGHT => app.selected_tab = Tabline::Chatting(ContactPage::Chat),
-            Key::UP => app.selected_contact.select_previous(),
-            Key::DOWN | KeyCode::Enter => app.selected_contact.select_next(),
-            _ => unimplemented!(),
-        }
+            Key::UP => {
+                app.selected_contact.select_previous();
+                let selected = app.get_selected_peer().unwrap();
+                let messages = app
+                    .sqlite
+                    .call(move |c| get_message_log(c, selected.to_string()))
+                    .await
+                    .unwrap();
+                app.chat = messages;
+            }
+            Key::DOWN | KeyCode::Enter => {
+                app.selected_contact.select_next();
+                let selected = app.get_selected_peer().unwrap();
+                let messages = app
+                    .sqlite
+                    .call(move |c| get_message_log(c, selected.to_string()))
+                    .await
+                    .unwrap();
+                app.chat = messages;
+                // dsdsdsd
+                // dsdsdsd
+            }
+            _ => (),
+        };
+        // TODO: Load the conversation into chat log
     }
 }
 async fn handle_chat(app: &mut App, event: Event) {
@@ -217,17 +265,12 @@ async fn handle_chat(app: &mut App, event: Event) {
                 app.buffer.pop();
             }
             KeyCode::Enter => {
-                let receiver = app
-                    .contacts
-                    .get(app.selected_contact.selected().unwrap())
-                    .unwrap();
-                app.client
-                    .send_message(receiver.peer_id, app.buffer.clone())
-                    .await;
+                let receiver = app.get_selected_peer().unwrap();
+                app.client.send_message(receiver, app.buffer.clone()).await;
                 // add the message to our chat log
                 app.chat.push(Message {
                     sender: Contact {
-                        peer_id: app.client.id,
+                        peer_id: app.client.id.to_string(),
                         name: "You".to_string(),
                     },
                     content: app.buffer.clone(),
@@ -394,7 +437,12 @@ fn ui(f: &mut Frame, app: &mut App) {
     // friend list
 }
 // App state
-pub async fn run(client: Client, token: CancellationToken, mut tui: Tui) -> anyhow::Result<()> {
+pub async fn run(
+    client: Client,
+    token: CancellationToken,
+    sqlite: tokio_rusqlite::Connection,
+    mut tui: Tui,
+) -> anyhow::Result<()> {
     // ratatui terminal
     tui.start();
 
@@ -412,6 +460,7 @@ pub async fn run(client: Client, token: CancellationToken, mut tui: Tui) -> anyh
         incoming_requests: vec![],
         selected_incoming_request: ListState::default(),
         selected_search_result: ListState::default(),
+        sqlite,
         token,
     };
 

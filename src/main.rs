@@ -55,7 +55,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let token = CancellationToken::new();
     let child_token = token.child_token();
     tokio::spawn(event_loop.run());
-    tokio::spawn(tui::run(client, token, tui));
+    tokio::spawn(tui::run(client, token, sqlite.clone(), tui));
     loop {
         // Read full lines from stdin
         tokio::select! {
@@ -83,7 +83,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 let mut stmt = c.prepare("SELECT name FROM contacts WHERE peer_id LIKE ?1")?;
                                 stmt.query_one([peer_id.to_string()], |r| {
                                     Ok(Contact {
-                                        peer_id,
+                                        peer_id: peer_id.to_string(),
                                         name: r.get(0)?,
                                     })
                                 })

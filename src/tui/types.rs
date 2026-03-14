@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 pub use crate::db::types::MessageStatus;
 use crate::network::Client;
 use crossterm::event::KeyCode;
@@ -9,6 +11,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 pub(crate) struct App {
+    pub sqlite: tokio_rusqlite::Connection,
     pub selected_tab: Tabline,
     pub selected_contact: ListState,
     pub contacts: Vec<Contact>,
@@ -23,6 +26,15 @@ pub(crate) struct App {
     pub selected_incoming_request: ListState,
     pub selected_search_result: ListState,
 }
+impl App {
+    pub fn get_selected_peer(&self) -> anyhow::Result<PeerId> {
+        let c = self
+            .contacts
+            .get(self.selected_contact.selected().unwrap())
+            .unwrap();
+        Ok(libp2p::PeerId::from_str(&c.peer_id)?)
+    }
+}
 #[derive(Debug, Clone)]
 pub struct Message {
     pub content: String,
@@ -33,7 +45,7 @@ pub struct Message {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct Contact {
-    pub peer_id: PeerId,
+    pub peer_id: String,
     pub name: String,
 }
 pub trait MoveHorizontal {

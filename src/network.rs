@@ -176,7 +176,7 @@ impl EventLoop {
                     if !known.contains(&peer_id) {
                         let _ = self.tui_tx.send(crate::tui::types::Event::AddContact(
                             crate::tui::types::Contact {
-                                peer_id,
+                                peer_id: peer_id.to_string(),
                                 name: "Anonymous".to_string(),
                             },
                         ));
@@ -318,7 +318,7 @@ impl EventLoop {
                                 tracing::info!("Received valid name response");
                                 self.tui_tx
                                     .send(EditContact(Contact {
-                                        peer_id: peer,
+                                        peer_id: peer.to_string(),
                                         name,
                                     }))
                                     .expect("to send");
