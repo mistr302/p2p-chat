@@ -1,4 +1,4 @@
-use base64::{engine::general_purpose, Engine as _};
+use base64::{Engine as _, engine::general_purpose};
 use futures::StreamExt;
 use libp2p::{
     PeerId, StreamProtocol, Swarm,
@@ -201,7 +201,7 @@ impl EventLoop {
                 } => {
                     // TODO: remove this unwrap
                     let (message, sender) = request.0.verify().expect("to be verified");
-                    // if message is valid, send
+                    // if message is valid, send ack
                     self.swarm
                         .behaviour_mut()
                         .direct_message
@@ -212,6 +212,7 @@ impl EventLoop {
                             }),
                         )
                         .expect("to be sent");
+
                     self.event_sender
                         .send(Event::InboundMessage {
                             message,
@@ -267,8 +268,10 @@ impl EventLoop {
                             .expect("On Name request to be sent");
                     }
                     FriendRequest::VerifyName { name } => {
-                        let SettingValue::String(Some(curr_name)) =
-                            self.settings.get(&SettingName::Name).expect("name opt to exist")
+                        let SettingValue::String(Some(curr_name)) = self
+                            .settings
+                            .get(&SettingName::Name)
+                            .expect("name opt to exist")
                         else {
                             unimplemented!("");
                         };

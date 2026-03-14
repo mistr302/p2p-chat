@@ -1,3 +1,4 @@
+pub use crate::db::types::MessageStatus;
 use crate::network::Client;
 use crossterm::event::KeyCode;
 use libp2p::PeerId;
@@ -21,13 +22,6 @@ pub(crate) struct App {
     pub incoming_requests: Vec<Contact>,
     pub selected_incoming_request: ListState,
     pub selected_search_result: ListState,
-}
-#[derive(Debug, Clone)]
-pub enum MessageStatus {
-    ReceivedNotRead,
-    ReceivedRead,
-    SentOffNotRead,
-    SentOffRead,
 }
 #[derive(Debug, Clone)]
 pub struct Message {

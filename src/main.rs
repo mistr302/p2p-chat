@@ -4,10 +4,11 @@ mod settings;
 mod setup_tui;
 mod tui;
 use crate::settings::{SettingName, SettingValue, create_project_dirs, get_save_file_path};
-use crate::tui::types::Tui;
+use crate::tui::types::{Contact, MessageStatus, Tui};
 use crate::{network::Event, settings::Settings};
 use libp2p::identity::PublicKey;
 use std::{error::Error, sync::Arc};
+use tokio_rusqlite::params;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::main]
@@ -68,29 +69,33 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         tracing::info!("recived message: {}: {}", sender.to_bytes().iter().map(|b| b.to_string()).collect::<String>(), message.content);
                         // TODO: maybe find out if peer id isnt already being sent in libp2p
                         let peer_id = PublicKey::from(*sender).to_peer_id();
-                        // // pull name from sqlite
-                        // sqlite
-                        //     .call(move |c| {
-                        //         let mut stmt = c.prepare("SELECT peer_id, name FROM contacts WHERE peer_id LIKE ?1")?;
-                        //         stmt.query_one([peer_id.to_string()], |r| {
-                        //             Ok(Contact {
-                        //                 peer_id,
-                        //                 name: r.get(1)?,
-                        //             })
-                        //         })
-                        //     })
-                        //     .await.unwrap();
+                        // TODO: save to sqlite
+                        let m = message.clone();
+                        sqlite
+                            .call(move |c| {
+                                let mut stmt = c.prepare("INSERT INTO messages (id, content, status, contact_id) VALUES (?, ?, ?, ?)")?;
+                                stmt.execute(params![m.id.to_string(), m.content, (MessageStatus::ReceivedNotRead as u8), peer_id.to_string()])
+                            })
+                            .await.unwrap();
+
+                        let contact = sqlite
+                            .call(move |c| {
+                                let mut stmt = c.prepare("SELECT name FROM contacts WHERE peer_id LIKE ?1")?;
+                                stmt.query_one([peer_id.to_string()], |r| {
+                                    Ok(Contact {
+                                        peer_id,
+                                        name: r.get(0)?,
+                                    })
+                                })
+                            })
+                            .await.unwrap();
+
                         let message = crate::tui::types::Message {
                             id: message.id,
                             content: message.content,
                             status: crate::tui::types::MessageStatus::ReceivedNotRead,
-                            sender: crate::tui::types::Contact {
-                                name: "Anonymous".to_string(),
-                                peer_id
-                                // peer_id: PeerId::, // I really need that peer_id
-                            },
+                            sender: contact,
                         };
-                        // TODO: save to sqlite
 
                         // send to tui
                         let _ = tui_tx.send(crate::tui::types::Event::MessageReceived(message));
