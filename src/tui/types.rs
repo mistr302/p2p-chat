@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use crate::db::types::DiscoveryType;
 pub use crate::db::types::MessageStatus;
 use crate::network::Client;
 use crossterm::event::KeyCode;
@@ -47,6 +48,7 @@ pub struct Message {
 pub struct Contact {
     pub peer_id: String,
     pub name: String,
+    pub discovery_type: DiscoveryType,
 }
 pub trait MoveHorizontal {
     fn left(self) -> Self;
@@ -162,8 +164,11 @@ pub enum Event {
     // TODO: do like refresh contact list from sqlite instead
     ReloadContacts(Vec<Contact>),
     AddContact(Contact),
-    EditContact(Contact),
+    EditContactName(Contact),
+    MdnsSearchRefresh,
     SearchResult(Vec<Contact>),
+    RefreshSearchResults,
+
     LoadFriendRequests(Vec<Contact>),
 }
 pub struct Tui {

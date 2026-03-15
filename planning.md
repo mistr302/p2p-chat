@@ -35,3 +35,4 @@ When opening a conversation, the chatlog is loaded from sqlite
 - insert the message to sqlite
 
 ### Friend request section
+// Name sending shouldnt be available on non mdns comm

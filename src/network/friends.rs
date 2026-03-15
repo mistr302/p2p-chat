@@ -95,6 +95,9 @@ impl Client {
             .await
             .expect("to send request");
     }
+    pub async fn search_peer(&mut self, name: String) {
+        unimplemented!()
+    }
 }
 
 // Name exchange -- Will occur when there is no name linked to PubKey

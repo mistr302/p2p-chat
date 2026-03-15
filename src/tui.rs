@@ -2,6 +2,7 @@ pub mod types;
 mod widgets;
 use std::str::FromStr;
 
+use crate::db::types::DiscoveryType;
 use crate::network::Client;
 use crate::tui::types::Contact;
 use crossterm::event::KeyCode;
@@ -178,7 +179,7 @@ async fn handle_event(app: &mut App, event: Event) {
             app.contacts = contacts;
             return;
         }
-        Event::EditContact(contact) => {
+        Event::EditContactName(contact) => {
             // TODO: actually handle
             if let Some(idx) = app
                 .contacts
@@ -186,8 +187,32 @@ async fn handle_event(app: &mut App, event: Event) {
                 .position(|x| x.peer_id == contact.peer_id)
             {
                 let c = app.contacts.get_mut(idx).expect("unreachable");
-                *c = contact;
+                c.name = contact.name;
             }
+            return;
+        }
+        Event::MdnsSearchRefresh => {
+            let contacts: tokio_rusqlite::Result<Vec<Contact>> = app.sqlite
+                .call(|c| {
+                    let mut stmt = c.prepare("SELECT name, peer_id, discovery_type FROM contacts WHERE discovery_type = ?").unwrap();
+                    let rows = stmt.query_map(params![DiscoveryType::Mdns as u8], |r| { Ok(Contact {
+                        name: r.get(0)?,
+                        peer_id: r.get(1)?,
+                        discovery_type: DiscoveryType::try_from_primitive(r.get(2)?).unwrap()
+                    })}).unwrap();
+
+                    let mut contacts = Vec::new();
+                    for r in rows {
+                        contacts.push(r?);
+                    }
+                    Ok(contacts)
+                })
+                .await;
+            app.friend_search_results = contacts.unwrap();
+            return;
+        }
+        Event::SearchResult(c) => {
+            app.friend_search_results = c;
             return;
         }
         Event::Init => {}
@@ -209,11 +234,11 @@ fn get_message_log(
     conn: &mut tokio_rusqlite::rusqlite::Connection,
     peer_id: String,
 ) -> tokio_rusqlite::Result<Vec<types::Message>> {
-    let sql = "SELECT m.id, m.content, m.status, c.name FROM messages AS m INNER JOIN contacts AS c ON m.contact_id = c.peer_id WHERE contact_id = ?";
+    let sql = "SELECT m.id, m.content, m.status, c.name, c.discovery_type FROM messages AS m INNER JOIN contacts AS c ON m.contact_id = c.peer_id WHERE contact_id = ?";
     let mut stmt = conn.prepare(sql).unwrap();
 
     let mut rows = stmt.query(params![peer_id])?;
-    let log = Vec::new();
+    let mut log = Vec::new();
     while let Ok(Some(r)) = rows.next() {
         let m = types::Message {
             id: uuid::Uuid::from_str(r.get::<usize, String>(0)?.as_ref()).unwrap(),
@@ -221,9 +246,11 @@ fn get_message_log(
             status: crate::db::types::MessageStatus::try_from_primitive(r.get(2)?).unwrap(),
             sender: types::Contact {
                 name: r.get(3)?,
+                discovery_type: DiscoveryType::try_from_primitive(r.get(4)?).unwrap(),
                 peer_id: peer_id.to_string(),
             },
         };
+        log.push(m);
     }
     Ok(log)
 }
@@ -272,6 +299,7 @@ async fn handle_chat(app: &mut App, event: Event) {
                     sender: Contact {
                         peer_id: app.client.id.to_string(),
                         name: "You".to_string(),
+                        discovery_type: DiscoveryType::You,
                     },
                     content: app.buffer.clone(),
                     id: uuid::Uuid::new_v4(),

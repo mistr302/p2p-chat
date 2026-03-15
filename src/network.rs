@@ -11,10 +11,11 @@ use libp2p::{
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, UnboundedSender};
-use tokio_rusqlite::Connection;
+use tokio_rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::{
+    db::types::DiscoveryType,
     network::{
         chat::{
             ChatCommand, DirectMessageRequest, DirectMessageResponse, Message, MessageResponse,
@@ -23,7 +24,7 @@ use crate::{
         signable::sign,
     },
     settings::{SettingName, SettingValue},
-    tui::types::{Contact, Event::EditContact},
+    tui::types::{Contact, Event::EditContactName},
 };
 pub mod chat;
 pub mod friends;
@@ -174,15 +175,32 @@ impl EventLoop {
                     tracing::info!("{peer_id} peer connected!");
                     // Maybe dial and get locally set name
                     if !known.contains(&peer_id) {
-                        let _ = self.tui_tx.send(crate::tui::types::Event::AddContact(
-                            crate::tui::types::Contact {
-                                peer_id: peer_id.to_string(),
-                                name: "Anonymous".to_string(),
-                            },
-                        ));
+                        // let _ = self.tui_tx.send(crate::tui::types::Event::AddContact(
+                        //     crate::tui::types::Contact {
+                        //         peer_id: peer_id.to_string(),
+                        //         name: "Anonymous".to_string(),
+                        //         discovery_type: DiscoveryType::Mdns,
+                        //     },
+                        // ));
                         known.push(peer_id);
+
+                        let _ = self
+                            .sqlite_conn
+                            .call(move |c| {
+                                let mut stmt = c.prepare(
+                                    "INSERT INTO contacts(peer_id, discovery_type) VALUES(?, ?)",
+                                )?;
+                                stmt.execute(params![
+                                    peer_id.to_string(),
+                                    DiscoveryType::Mdns as u8
+                                ])
+                            })
+                            .await;
+                        self.client.request_name(peer_id).await;
+                        self.tui_tx
+                            .send(crate::tui::types::Event::MdnsSearchRefresh)
+                            .expect("to send");
                     }
-                    self.client.request_name(peer_id).await;
                 }
             }
             SwarmEvent::Behaviour(BehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
@@ -317,10 +335,23 @@ impl EventLoop {
                             FriendResponse::RequestName { name } => {
                                 tracing::info!("Received valid name response");
                                 self.tui_tx
-                                    .send(EditContact(Contact {
+                                    .send(EditContactName(Contact {
                                         peer_id: peer.to_string(),
-                                        name,
+                                        name: name.clone(),
+                                        discovery_type: DiscoveryType::You,
                                     }))
+                                    .expect("to send");
+                                self.sqlite_conn
+                                    .call(move |c| {
+                                        let mut stmt = c.prepare(
+                                            "UPDATE contacts SET name=? WHERE peer_id = ?",
+                                        )?;
+                                        stmt.execute(params![name, peer.to_string()])
+                                    })
+                                    .await
+                                    .unwrap();
+                                self.tui_tx
+                                    .send(crate::tui::types::Event::MdnsSearchRefresh)
                                     .expect("to send");
                             }
                             FriendResponse::VerifyName(name) => {}

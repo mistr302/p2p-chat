@@ -3,10 +3,12 @@ mod network;
 mod settings;
 mod setup_tui;
 mod tui;
+use crate::db::types::DiscoveryType;
 use crate::settings::{SettingName, SettingValue, create_project_dirs, get_save_file_path};
 use crate::tui::types::{Contact, MessageStatus, Tui};
 use crate::{network::Event, settings::Settings};
 use libp2p::identity::PublicKey;
+use num_enum::TryFromPrimitive;
 use std::{error::Error, sync::Arc};
 use tokio_rusqlite::params;
 use tokio_util::sync::CancellationToken;
@@ -80,11 +82,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         let contact = sqlite
                             .call(move |c| {
-                                let mut stmt = c.prepare("SELECT name FROM contacts WHERE peer_id LIKE ?1")?;
+                                let mut stmt = c.prepare("SELECT name, discovery_type FROM contacts WHERE peer_id LIKE ?1")?;
                                 stmt.query_one([peer_id.to_string()], |r| {
                                     Ok(Contact {
                                         peer_id: peer_id.to_string(),
                                         name: r.get(0)?,
+                                        discovery_type: DiscoveryType::try_from_primitive(r.get(1)?).unwrap(),
                                     })
                                 })
                             })
