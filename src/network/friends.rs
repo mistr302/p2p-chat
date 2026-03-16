@@ -18,7 +18,6 @@ pub enum FriendResponse {
 }
 pub enum FriendCommand {
     RequestName { peer: PeerId },
-    VerifyName { name: String, peer: PeerId },
     AddFriend { peer: PeerId },
     AcceptFriend { peer: PeerId, decision: bool },
 }
@@ -32,11 +31,6 @@ impl EventLoop {
                 .behaviour_mut()
                 .friends
                 .send_request(&peer, FriendRequest::RequestName),
-            FriendCommand::VerifyName { peer, name } => self
-                .swarm
-                .behaviour_mut()
-                .friends
-                .send_request(&peer, FriendRequest::VerifyName { name }),
             FriendCommand::AddFriend { peer } => self
                 .swarm
                 .behaviour_mut()
@@ -59,15 +53,6 @@ impl Client {
             .await
             .expect("to send request");
         tracing::info!("Sending name req");
-    }
-    pub async fn verify_name(&mut self, peer: PeerId, name: String) {
-        self.command_sender
-            .send(super::Command::FriendCommand(FriendCommand::VerifyName {
-                name,
-                peer,
-            }))
-            .await
-            .expect("to send request");
     }
     pub async fn send_friend_request(&mut self, peer: PeerId) {
         self.command_sender
