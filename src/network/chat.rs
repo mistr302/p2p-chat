@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct DirectMessageRequest(pub Signed<Message>);
+pub struct DirectMessageRequest(pub Message);
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DirectMessageResponse(pub MessageResponse);
 
@@ -21,13 +21,10 @@ pub enum MessageResponse {
     InvalidSignature { message_id: Uuid },
 }
 pub enum ChatCommand {
-    SendMessage {
-        receiver: PeerId,
-        message: Signed<Message>,
-    },
-    ReadMessage {
-        receiver: PeerId,
-    },
+    SendMessage { receiver: PeerId, message: Message },
+    // ReadMessage {
+    //     receiver: PeerId,
+    // },
 }
 impl EventLoop {
     pub async fn handle_chat_command(&mut self, command: ChatCommand) {
@@ -37,14 +34,13 @@ impl EventLoop {
                     .behaviour_mut()
                     .direct_message
                     .send_request(&receiver, DirectMessageRequest(message));
-            }
-            ChatCommand::ReadMessage { receiver } => {
-                todo!()
-                // self.swarm
-                //     .behaviour_mut()
-                //     .direct_message
-                //     .send_request(&receiver, DirectMessageRequest(1));
-            }
+            } // ChatCommand::ReadMessage { receiver } => {
+              //     todo!()
+              //     // self.swarm
+              //     //     .behaviour_mut()
+              //     //     .direct_message
+              //     //     .send_request(&receiver, DirectMessageRequest(1));
+              // }
         }
     }
 }
@@ -54,11 +50,10 @@ impl Client {
             content: message,
             id: uuid::Uuid::new_v4(),
         };
-        let signed_message = sign(message, &self.keys);
         self.command_sender
             .send(Command::ChatCommand(ChatCommand::SendMessage {
                 receiver,
-                message: signed_message,
+                message,
             }))
             .await
             .expect("To send message");

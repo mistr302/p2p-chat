@@ -14,7 +14,7 @@ use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{error::Error, sync::Arc};
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_rusqlite::params;
 use tokio_util::sync::CancellationToken;
 
@@ -45,7 +45,7 @@ enum UiClientEventResponse {
     LoadIncomingFriendRequests,
 }
 #[derive(Deserialize, Serialize)]
-enum WriteEvent {
+pub enum WriteEvent {
     ReceiveMessage(tui::types::Message),
     ReceiveFriendRequest,
     DiscoverMdnsContact,
@@ -70,7 +70,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut _sock = tokio::net::UnixStream::connect("/tmp/p2p-chat.sock")
         .await
         .expect("to connect");
-    let (mut sock_read, sock_write) = _sock.split();
+    let (mut sock_read, mut sock_write) = _sock.split();
     // let sqlite = tokio_rusqlite::Connection::open_in_memory()
     //     .await
     //     .expect("Couldnt open sqlite connection");
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let settings = Settings::load();
     // TODO: Check all required settings while loading and return result when loading
-    let (api_writer_tx, mut api_writer_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (api_writer_tx, mut api_writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriteEvent>();
 
     let settings = Arc::new(settings);
     let (event_loop, mut client) =
@@ -120,16 +120,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         event = api_writer_rx.recv() => {
-
+            if let Some(write_event) = event {
+                let serialized = postcard::to_allocvec(&write_event)?;
+                sock_write.write_u64(serialized.len() as u64).await?;
+                sock_write.write_all(&serialized).await?;
+            }
         }
     }
-    loop {
-        let bytes: u64 = sock_read.read_u64().await?;
-        let mut buf = Vec::with_capacity(bytes as usize);
-
-        sock_read.read_exact(&mut buf).await.unwrap();
-        let event: UiClientEvent = postcard::from_bytes(&buf).unwrap();
-    }
+    Ok(())
 }
 async fn read_event(sock_read: &mut (impl AsyncReadExt + Unpin)) -> anyhow::Result<UiClientEvent> {
     let bytes = sock_read.read_u64().await?;

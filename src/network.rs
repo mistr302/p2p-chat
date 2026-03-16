@@ -16,16 +16,13 @@ use tokio_rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::{
-    db::types::{DiscoveryType, MessageStatus},
-    network::{
+    WriteEvent, db::types::{DiscoveryType, MessageStatus}, network::{
         chat::{
             ChatCommand, DirectMessageRequest, DirectMessageResponse, Message, MessageResponse,
         },
         friends::{FriendCommand, FriendRequest, FriendResponse},
         signable::sign,
-    },
-    settings::{SettingName, SettingValue},
-    tui::types::{Contact, Event::EditContactName},
+    }, settings::{SettingName, SettingValue}, tui::types::{Contact, Event::EditContactName}
 };
 pub mod chat;
 pub mod friends;
@@ -38,7 +35,7 @@ pub enum Command {
 pub(crate) async fn new(
     sqlite_conn: Connection,
     settings: Arc<HashMap<SettingName, SettingValue>>,
-    tui_tx: UnboundedSender<crate::tui::types::Event>,
+    api_writer_tx: UnboundedSender<WriteEvent>,
 ) -> (EventLoop, Client) {
     // TODO: Confiugre properly & handle errors
     // Dont generate identities on every run, create a store
@@ -108,7 +105,7 @@ pub(crate) async fn new(
         command_rx,
         settings,
         keys: id,
-        tui_tx,
+        api_writer_tx,
         sqlite_conn,
         client: client.clone(),
     };
@@ -120,7 +117,7 @@ struct Behaviour {
     direct_message:
         libp2p::request_response::cbor::Behaviour<DirectMessageRequest, DirectMessageResponse>,
     friends:
-        libp2p::request_response::cbor::Behaviour<FriendRequest, signable::Signed<FriendResponse>>,
+        libp2p::request_response::cbor::Behaviour<FriendRequest, FriendResponse>,
 }
 pub struct EventLoop {
     swarm: Swarm<Behaviour>,
@@ -128,7 +125,7 @@ pub struct EventLoop {
     settings: Arc<HashMap<SettingName, SettingValue>>,
     keys: Keypair,
     sqlite_conn: Connection,
-    tui_tx: UnboundedSender<crate::tui::types::Event>,
+    api_writer_tx: UnboundedSender<WriteEvent>,
     client: Client,
 }
 #[derive(Clone)]
@@ -182,9 +179,7 @@ impl EventLoop {
                             })
                             .await;
                         self.client.request_name(peer_id).await;
-                        self.tui_tx
-                            .send(crate::tui::types::Event::MdnsSearchRefresh)
-                            .expect("to send");
+                        // TODO: Send the mdns record
                     }
                 }
             }
@@ -203,21 +198,9 @@ impl EventLoop {
                     request_response::Message::Request {
                         request, channel, ..
                     } => {
-                        // TODO: remove this unwrap
-                        let (message, sender) = request.0.verify().expect("to be verified");
-                        tracing::info!(
-                            "recived message: {}: {}",
-                            sender
-                                .to_bytes()
-                                .iter()
-                                .map(|b| b.to_string())
-                                .collect::<String>(),
-                            message.content
-                        );
-                        // TODO: maybe find out if peer id isnt already being sent in libp2p
+                        let message = request.0;
                         let peer_id = peer;
 
-                        // TODO: save to sqlite
                         let m = message.clone();
                         self.sqlite_conn
                             .call(move |c| {
@@ -250,7 +233,7 @@ impl EventLoop {
                                 }),
                             )
                             .expect("to be sent");
-
+                        // TODO: Send to ui through the api
                     }
                     request_response::Message::Response { response, .. } => match response {
                         DirectMessageResponse(MessageResponse::ACK { message_id }) => {
@@ -280,7 +263,6 @@ impl EventLoop {
                             .friends
                             .send_response(
                                 channel,
-                                sign(
                                     FriendResponse::RequestName {
                                         name: match name.unwrap() {
                                             SettingValue::String(val) => {
@@ -289,8 +271,7 @@ impl EventLoop {
                                             _ => unimplemented!("undefined behaviour"),
                                         },
                                     },
-                                    &self.keys,
-                                ),
+                             
                             )
                             .expect("On Name request to be sent");
                     }
@@ -307,13 +288,10 @@ impl EventLoop {
                             .friends
                             .send_response(
                                 channel,
-                                sign(
                                     FriendResponse::VerifyName(match name == *curr_name {
                                         true => None,
                                         false => Some(curr_name.clone()),
                                     }),
-                                    &self.keys,
-                                ),
                             )
                             .expect("to send res");
                     }
@@ -323,7 +301,7 @@ impl EventLoop {
                             .friends
                             .send_response(
                                 channel,
-                                sign(FriendResponse::AcceptFriendAck, &self.keys),
+                                FriendResponse::AcceptFriendAck,
                             )
                             .expect("to send res");
                     }
@@ -331,7 +309,7 @@ impl EventLoop {
                         .swarm
                         .behaviour_mut()
                         .friends
-                        .send_response(channel, sign(FriendResponse::AddFriendAck, &self.keys))
+                        .send_response(channel, FriendResponse::AddFriendAck)
                         .expect("to send res"),
                 },
 
@@ -339,17 +317,10 @@ impl EventLoop {
                     request_id,
                     response,
                 } => {
-                    if let Some((resp, sender)) = response.verify() {
-                        match resp {
+                        match response {
                             FriendResponse::RequestName { name } => {
                                 tracing::info!("Received valid name response");
-                                self.tui_tx
-                                    .send(EditContactName(Contact {
-                                        peer_id: peer.to_string(),
-                                        name: name.clone(),
-                                        discovery_type: DiscoveryType::You,
-                                    }))
-                                    .expect("to send");
+
                                 self.sqlite_conn
                                     .call(move |c| {
                                         let mut stmt = c.prepare(
@@ -359,15 +330,12 @@ impl EventLoop {
                                     })
                                     .await
                                     .unwrap();
-                                self.tui_tx
-                                    .send(crate::tui::types::Event::MdnsSearchRefresh)
-                                    .expect("to send");
+                                // TODO: After success send to ui over API
                             }
                             FriendResponse::VerifyName(name) => {}
                             FriendResponse::AddFriendAck => {}
                             FriendResponse::AcceptFriendAck => {}
                         }
-                    }
                 }
             },
             _ => {}
