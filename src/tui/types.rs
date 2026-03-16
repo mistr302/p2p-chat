@@ -8,6 +8,7 @@ use libp2p::PeerId;
 use ratatui::crossterm::event::KeyCode::Char;
 use ratatui::crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::widgets::ListState;
+use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -36,7 +37,7 @@ impl App {
         Ok(libp2p::PeerId::from_str(&c.peer_id)?)
     }
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub content: String,
     pub id: uuid::Uuid,
@@ -44,7 +45,7 @@ pub struct Message {
     pub status: MessageStatus,
     // TODO: date
 }
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Contact {
     pub peer_id: String,
     pub name: String,

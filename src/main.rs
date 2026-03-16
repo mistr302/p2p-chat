@@ -1,18 +1,56 @@
 mod db;
+mod ipc;
 mod network;
 mod settings;
 mod setup_tui;
 mod tui;
 use crate::db::types::DiscoveryType;
+use crate::settings::Settings;
 use crate::settings::{SettingName, SettingValue, create_project_dirs, get_save_file_path};
 use crate::tui::types::{Contact, MessageStatus, Tui};
-use crate::{network::Event, settings::Settings};
+use libp2p::PeerId;
 use libp2p::identity::PublicKey;
 use num_enum::TryFromPrimitive;
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use std::{error::Error, sync::Arc};
+use tokio::io::AsyncReadExt;
 use tokio_rusqlite::params;
 use tokio_util::sync::CancellationToken;
 
+#[derive(Deserialize, Serialize)]
+enum UiClientEvent {
+    SendMessage { peer_id: String, message: String },
+    SendFriendRequest { peer_id: String },
+    AcceptFriendRequest { peer_id: String },
+    SearchUsername { username: String },
+    CheckUsernameAvailability { username: String },
+    ChangeUsername { username: String },
+    LoadChatlogPage,
+    LoadFriends,
+    LoadPendingFriendRequests,
+    LoadIncomingFriendRequests,
+}
+#[derive(Deserialize, Serialize)]
+enum UiClientEventResponse {
+    SendMessage,
+    SendFriendRequest,
+    AcceptFriendRequest,
+    SearchUsername,
+    CheckUsernameAvailability,
+    ChangeUsername,
+    LoadChatlogPage,
+    LoadFriends,
+    LoadPendingFriendRequests,
+    LoadIncomingFriendRequests,
+}
+#[derive(Deserialize, Serialize)]
+enum WriteEvent {
+    ReceiveMessage(tui::types::Message),
+    ReceiveFriendRequest,
+    DiscoverMdnsContact,
+    EventResponse(UiClientEventResponse),
+}
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
@@ -28,6 +66,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let sqlite = tokio_rusqlite::Connection::open(get_save_file_path(settings::SaveFile::Database))
         .await
         .expect("Couldnt open sqlite connection");
+    // Open unix socket
+    let mut sock = tokio::net::UnixStream::connect("/tmp/p2p-chat.sock")
+        .await
+        .expect("to connect");
     // let sqlite = tokio_rusqlite::Connection::open_in_memory()
     //     .await
     //     .expect("Couldnt open sqlite connection");
@@ -41,65 +83,35 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let tui_tx = tui.event_tx.clone();
 
     let settings = Arc::new(settings);
-    let (event_loop, client, mut network_event) =
+    let (event_loop, mut client) =
         network::new(sqlite.clone(), settings.clone(), tui_tx.clone()).await;
     let token = CancellationToken::new();
     let child_token = token.child_token();
     tokio::spawn(event_loop.run());
-    tokio::spawn(tui::run(client, token, sqlite.clone(), tui));
+
     loop {
-        // Read full lines from stdin
-        tokio::select! {
-            _ = child_token.cancelled() => {
-                // TODO: Handle gracefully
-                return Ok(())
+        let bytes: u64 = sock.read_u64().await?;
+        let mut buf = Vec::with_capacity(bytes as usize);
+
+        sock.read_exact(&mut buf).await.unwrap();
+        let event: UiClientEvent = postcard::from_bytes(&buf).unwrap();
+        match event {
+            UiClientEvent::SendMessage { peer_id, message } => {
+                client
+                    .send_message(PeerId::from_str(&peer_id).unwrap(), message)
+                    .await;
             }
-            Some(event) = network_event.recv() => {
-                match event {
-                    Event::InboundMessage { message, sender } => {
-                        tracing::info!("recived message: {}: {}", sender.to_bytes().iter().map(|b| b.to_string()).collect::<String>(), message.content);
-                        // TODO: maybe find out if peer id isnt already being sent in libp2p
-                        let peer_id = PublicKey::from(*sender).to_peer_id();
-                        // TODO: save to sqlite
-                        let m = message.clone();
-                        sqlite
-                            .call(move |c| {
-                                let mut stmt = c.prepare("INSERT INTO messages (id, content, status, contact_id) VALUES (?, ?, ?, ?)")?;
-                                stmt.execute(params![m.id.to_string(), m.content, (MessageStatus::ReceivedNotRead as u8), peer_id.to_string()])
-                            })
-                            .await.unwrap();
-
-                        let contact = sqlite
-                            .call(move |c| {
-                                let mut stmt = c.prepare("SELECT name, discovery_type FROM contacts WHERE peer_id LIKE ?1")?;
-                                stmt.query_one([peer_id.to_string()], |r| {
-                                    Ok(Contact {
-                                        peer_id: peer_id.to_string(),
-                                        name: r.get(0)?,
-                                        discovery_type: DiscoveryType::try_from_primitive(r.get(1)?).unwrap(),
-                                    })
-                                })
-                            })
-                            .await.unwrap();
-
-                        let message = crate::tui::types::Message {
-                            id: message.id,
-                            content: message.content,
-                            status: crate::tui::types::MessageStatus::ReceivedNotRead,
-                            sender: contact,
-                        };
-
-                        // send to tui
-                        let _ = tui_tx.send(crate::tui::types::Event::MessageReceived(message));
-                    }
-                    Event::OutboundMessageReceived { message_id } => {
-                        tracing::info!("{} message was received!", message_id);
-                    },
-                    Event::OutboundMessageInvalidSignature { message_id } => {
-                        tracing::info!("outbound messsage has invalid sig");
-                    },
-                }
+            UiClientEvent::SendFriendRequest { peer_id } => {
+                client
+                    .send_friend_request(PeerId::from_str(&peer_id).unwrap())
+                    .await
             }
+            UiClientEvent::AcceptFriendRequest { peer_id } => {
+                client
+                    .accept_friend_req(PeerId::from_str(&peer_id).unwrap())
+                    .await
+            }
+            _ => unimplemented!(),
         }
     }
 }

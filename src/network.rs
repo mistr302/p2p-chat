@@ -8,6 +8,7 @@ use libp2p::{
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux,
 };
+use num_enum::TryFromPrimitive;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, UnboundedSender};
@@ -15,7 +16,7 @@ use tokio_rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::{
-    db::types::DiscoveryType,
+    db::types::{DiscoveryType, MessageStatus},
     network::{
         chat::{
             ChatCommand, DirectMessageRequest, DirectMessageResponse, Message, MessageResponse,
@@ -38,7 +39,7 @@ pub(crate) async fn new(
     sqlite_conn: Connection,
     settings: Arc<HashMap<SettingName, SettingValue>>,
     tui_tx: UnboundedSender<crate::tui::types::Event>,
-) -> (EventLoop, Client, mpsc::Receiver<Event>) {
+) -> (EventLoop, Client) {
     // TODO: Confiugre properly & handle errors
     // Dont generate identities on every run, create a store
 
@@ -96,7 +97,6 @@ pub(crate) async fn new(
         .listen_on("/ip4/0.0.0.0/tcp/0".parse().unwrap())
         .unwrap();
     let (command_tx, command_rx) = mpsc::channel(100);
-    let (event_tx, event_rx) = mpsc::channel(100);
     let client = Client {
         settings: settings.clone(),
         command_sender: command_tx,
@@ -106,27 +106,13 @@ pub(crate) async fn new(
     let event_loop = EventLoop {
         swarm,
         command_rx,
-        event_sender: event_tx,
         settings,
         keys: id,
         tui_tx,
         sqlite_conn,
         client: client.clone(),
     };
-    (event_loop, client, event_rx)
-}
-#[derive(Debug)]
-pub(crate) enum Event {
-    InboundMessage {
-        message: Message,
-        sender: Box<PublicKey>,
-    },
-    OutboundMessageReceived {
-        message_id: Uuid,
-    },
-    OutboundMessageInvalidSignature {
-        message_id: Uuid,
-    },
+    (event_loop, client)
 }
 #[derive(NetworkBehaviour)]
 struct Behaviour {
@@ -139,7 +125,6 @@ struct Behaviour {
 pub struct EventLoop {
     swarm: Swarm<Behaviour>,
     command_rx: mpsc::Receiver<Command>,
-    event_sender: mpsc::Sender<Event>,
     settings: Arc<HashMap<SettingName, SettingValue>>,
     keys: Keypair,
     sqlite_conn: Connection,
@@ -212,48 +197,72 @@ impl EventLoop {
                 tracing::info!("Local node is listening on {address}");
             }
             SwarmEvent::Behaviour(BehaviourEvent::DirectMessage(
-                request_response::Event::Message { message, .. },
-            )) => match message {
-                request_response::Message::Request {
-                    request, channel, ..
-                } => {
-                    // TODO: remove this unwrap
-                    let (message, sender) = request.0.verify().expect("to be verified");
-                    // if message is valid, send ack
-                    self.swarm
-                        .behaviour_mut()
-                        .direct_message
-                        .send_response(
-                            channel,
-                            DirectMessageResponse(MessageResponse::ACK {
-                                message_id: message.id,
-                            }),
-                        )
-                        .expect("to be sent");
+                request_response::Event::Message { message, peer, .. },
+            )) => {
+                match message {
+                    request_response::Message::Request {
+                        request, channel, ..
+                    } => {
+                        // TODO: remove this unwrap
+                        let (message, sender) = request.0.verify().expect("to be verified");
+                        tracing::info!(
+                            "recived message: {}: {}",
+                            sender
+                                .to_bytes()
+                                .iter()
+                                .map(|b| b.to_string())
+                                .collect::<String>(),
+                            message.content
+                        );
+                        // TODO: maybe find out if peer id isnt already being sent in libp2p
+                        let peer_id = peer;
 
-                    self.event_sender
-                        .send(Event::InboundMessage {
-                            message,
-                            sender: Box::new(sender),
-                        })
-                        .await
-                        .expect("Event receiver not to be dropped.");
+                        // TODO: save to sqlite
+                        let m = message.clone();
+                        self.sqlite_conn
+                            .call(move |c| {
+                                let mut stmt = c.prepare("INSERT INTO messages (id, content, status, contact_id) VALUES (?, ?, ?, ?)")?;
+                                stmt.execute(params![m.id.to_string(), m.content, (MessageStatus::ReceivedNotRead as u8), peer_id.to_string()])
+                            })
+                            .await.unwrap();
+
+                        let contact =self.sqlite_conn 
+                            .call(move |c| {
+                                let mut stmt = c.prepare("SELECT name, discovery_type FROM contacts WHERE peer_id LIKE ?1")?;
+                                stmt.query_one([peer_id.to_string()], |r| {
+                                    Ok(Contact {
+                                        peer_id: peer_id.to_string(),
+                                        name: r.get(0)?,
+                                        discovery_type: DiscoveryType::try_from_primitive(r.get(1)?).unwrap(),
+                                    })
+                                })
+                            })
+                            .await.unwrap();
+
+                        // if message is valid, send ack
+                        self.swarm
+                            .behaviour_mut()
+                            .direct_message
+                            .send_response(
+                                channel,
+                                DirectMessageResponse(MessageResponse::ACK {
+                                    message_id: message.id,
+                                }),
+                            )
+                            .expect("to be sent");
+
+                    }
+                    request_response::Message::Response { response, .. } => match response {
+                        DirectMessageResponse(MessageResponse::ACK { message_id }) => {
+                            // TODO:
+                        }
+                        DirectMessageResponse(MessageResponse::InvalidSignature { message_id }) => {
+                            // TODO:
+
+                        }
+                    },
                 }
-                request_response::Message::Response { response, .. } => match response {
-                    DirectMessageResponse(MessageResponse::ACK { message_id }) => {
-                        self.event_sender
-                            .send(Event::OutboundMessageReceived { message_id })
-                            .await
-                            .expect("Event receiver not to be dropped.");
-                    }
-                    DirectMessageResponse(MessageResponse::InvalidSignature { message_id }) => {
-                        self.event_sender
-                            .send(Event::OutboundMessageInvalidSignature { message_id })
-                            .await
-                            .expect("Event receiver not to be dropped");
-                    }
-                },
-            },
+            }
             SwarmEvent::Behaviour(BehaviourEvent::Friends(request_response::Event::Message {
                 peer,
                 connection_id,

@@ -1,6 +1,6 @@
 use num_enum::TryFromPrimitive;
-
-#[derive(Debug, PartialEq, Clone, TryFromPrimitive)]
+use serde::{Deserialize, Serialize};
+#[derive(Debug, PartialEq, Clone, TryFromPrimitive, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum DiscoveryType {
     Mdns = 0,
@@ -14,7 +14,7 @@ pub enum FriendRequestType {
     Outgoing = 1,
 }
 
-#[derive(Debug, Clone, TryFromPrimitive)]
+#[derive(Debug, Clone, TryFromPrimitive, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum MessageStatus {
     ReceivedNotRead = 0,
