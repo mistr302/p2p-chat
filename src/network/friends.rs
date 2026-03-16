@@ -83,6 +83,24 @@ impl Client {
     pub async fn search_peer(&mut self, name: String) {
         unimplemented!()
     }
+    pub async fn search_username(&mut self, username: String) {
+        unimplemented!()
+    }
+    pub async fn check_username_availability(&mut self, username: String) {
+        unimplemented!()
+    }
+    pub async fn change_username(&mut self, username: String) {
+        unimplemented!()
+    }
+    pub async fn load_friends(&mut self) {
+        unimplemented!()
+    }
+    pub async fn load_pending_friend_requests(&mut self) {
+        unimplemented!()
+    }
+    pub async fn load_incoming_friend_requests(&mut self) {
+        unimplemented!()
+    }
 }
 
 // Name exchange -- Will occur when there is no name linked to PubKey

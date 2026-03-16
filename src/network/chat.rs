@@ -63,4 +63,7 @@ impl Client {
             .await
             .expect("To send message");
     }
+    pub async fn load_chatlog_page(&mut self) {
+        unimplemented!()
+    }
 }
