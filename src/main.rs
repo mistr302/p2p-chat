@@ -62,17 +62,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .await
             .expect("Couldnt open sqlite connection"),
     );
+    // let sqlite = tokio_rusqlite::Connection::open_in_memory()
+    //     .await
+    //     .expect("Couldnt open sqlite connection");
+
     // Open unix socket
     let listener = tokio::net::UnixListener::bind("/tmp/p2p-chat.sock").expect("to create");
     let mut _sock = listener.accept().await.expect("to accept");
 
     let (mut sock_read, mut sock_write) = _sock.0.split();
-    // let sqlite = tokio_rusqlite::Connection::open_in_memory()
-    //     .await
-    //     .expect("Couldnt open sqlite connection");
-    db::migrate_db::migrate(&sqlite)
-        .await
-        .expect("Failed to migrate database");
+
+    db::migrate_db::migrate(&sqlite).await?;
 
     let settings = Settings::load()?;
     // TODO: Check all required settings while loading and return result when loading
@@ -80,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let settings = Arc::new(settings);
     let (event_loop, mut client) =
-        network::new(sqlite.clone(), settings.clone(), api_writer_tx.clone()).await;
+        network::new(sqlite.clone(), settings.clone(), api_writer_tx.clone()).await?;
     // let token = CancellationToken::new();
     // let child_token = token.child_token();
     tokio::spawn(event_loop.run());

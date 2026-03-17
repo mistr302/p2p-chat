@@ -34,9 +34,8 @@ pub(crate) async fn new(
     sqlite_conn: Arc<Connection>,
     settings: Arc<HashMap<SettingName, SettingValue>>,
     api_writer_tx: UnboundedSender<WriteEvent>,
-) -> (EventLoop, Client) {
+) -> anyhow::Result<(EventLoop, Client)> {
     // TODO: Confiugre properly & handle errors
-    // Dont generate identities on every run, create a store
 
     let id = match settings.get(&SettingName::KeyPair) {
         Some(SettingValue::String(Some(s))) => {
@@ -59,8 +58,7 @@ pub(crate) async fn new(
             tcp::Config::default(),
             noise::Config::new,
             yamux::Config::default,
-        )
-        .unwrap()
+        )?
         .with_quic()
         .with_behaviour(|key| {
             let mdns =
@@ -81,16 +79,13 @@ pub(crate) async fn new(
                 direct_message,
                 friends,
             })
-        })
-        .unwrap()
+        })?
         .build();
     // Listen on all interfaces and whatever port the OS assigns
     swarm
-        .listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse().unwrap())
-        .unwrap();
+        .listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
     swarm
-        .listen_on("/ip4/0.0.0.0/tcp/0".parse().unwrap())
-        .unwrap();
+        .listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
     let (command_tx, command_rx) = mpsc::channel(100);
     let client = Client {
         settings: settings.clone(),
@@ -107,7 +102,7 @@ pub(crate) async fn new(
         sqlite_conn,
         client: client.clone(),
     };
-    (event_loop, client)
+    Ok((event_loop, client))
 }
 #[derive(NetworkBehaviour)]
 struct Behaviour {
@@ -155,14 +150,9 @@ impl EventLoop {
                     tracing::info!("{peer_id} peer connected!");
                     // Maybe dial and get locally set name
                     if !known.contains(&peer_id) {
-                        // let _ = self.tui_tx.send(crate::tui::types::Event::AddContact(
-                        //     crate::tui::types::Contact {
-                        //         peer_id: peer_id.to_string(),
-                        //         name: "Anonymous".to_string(),
-                        //         discovery_type: DiscoveryType::Mdns,
-                        //     },
-                        // ));
                         known.push(peer_id);
+                        // TODO: Handle uniqueness maybe select the peer_id first from sqlite and
+                        // check if exists
 
                         let res = self
                             .sqlite_conn
@@ -342,7 +332,6 @@ impl EventLoop {
                                     Ok(_) => self.api_writer_tx.send(WriteEvent::MdnsNameChanged { peer_id: peer.to_string(), name: n }).expect("to send"),
                                     Err(err) => tracing::info!("{err}")
                                 }
-                                // TODO: After success send to ui over API
                             }
                             FriendResponse::VerifyName(name) => {}
                             FriendResponse::AddFriendAck => {}

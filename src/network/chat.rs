@@ -56,7 +56,7 @@ impl Client {
                 message,
             }))
             .await
-            .expect("To send message");
+            .expect("to send");
     }
     pub async fn load_chatlog_page(&mut self) {
         unimplemented!()
