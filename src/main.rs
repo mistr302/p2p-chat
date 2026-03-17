@@ -1,22 +1,15 @@
 mod db;
-mod ipc;
 mod network;
 mod settings;
 mod setup_tui;
 mod tui;
-use crate::db::types::DiscoveryType;
 use crate::settings::Settings;
-use crate::settings::{SettingName, SettingValue, create_project_dirs, get_save_file_path};
-use crate::tui::types::{Contact, MessageStatus, Tui};
+use crate::settings::{create_project_dirs, get_save_file_path};
 use libp2p::PeerId;
-use libp2p::identity::PublicKey;
-use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{error::Error, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio_rusqlite::params;
-use tokio_util::sync::CancellationToken;
 
 #[derive(Deserialize, Serialize)]
 enum UiClientEvent {

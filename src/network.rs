@@ -2,7 +2,7 @@ use base64::{Engine as _, engine::general_purpose};
 use futures::StreamExt;
 use libp2p::{
     PeerId, StreamProtocol, Swarm,
-    identity::{Keypair, ed25519::PublicKey},
+    identity::{Keypair},
     mdns, noise,
     request_response::{self, ProtocolSupport},
     swarm::{NetworkBehaviour, SwarmEvent},
