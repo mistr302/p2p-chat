@@ -13,16 +13,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio_rusqlite::{Connection, params};
-use uuid::Uuid;
 
 use crate::{
     WriteEvent, db::types::{DiscoveryType, MessageStatus}, network::{
         chat::{
-            ChatCommand, DirectMessageRequest, DirectMessageResponse, Message, MessageResponse,
+            ChatCommand, DirectMessageRequest, DirectMessageResponse, MessageResponse,
         },
         friends::{FriendCommand, FriendRequest, FriendResponse},
-        signable::sign,
-    }, settings::{SettingName, SettingValue}, tui::types::{Contact, Event::EditContactName}
+    }, settings::{SettingName, SettingValue}, tui::types::Contact
 };
 pub mod chat;
 pub mod friends;
@@ -166,7 +164,7 @@ impl EventLoop {
                         // ));
                         known.push(peer_id);
 
-                        let _ = self
+                        let res = self
                             .sqlite_conn
                             .call(move |c| {
                                 let mut stmt = c.prepare(
@@ -178,7 +176,11 @@ impl EventLoop {
                                 ])
                             })
                             .await;
-                        self.client.request_name(peer_id).await;
+                        match res {
+                            Ok(_) => self.client.request_name(peer_id).await,
+                            Err(e) => tracing::info!("{e}"),
+ 
+                        }
                         // TODO: Send the mdns record
                     }
                 }
