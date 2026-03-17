@@ -32,7 +32,7 @@ pub enum UiClientEventResponse {
     SearchUsername,
     CheckUsernameAvailability,
     ChangeUsername,
-    LoadChatlogPage,
+    LoadChatlogPage(Vec<crate::tui::types::Message>),
     LoadFriends,
     LoadPendingFriendRequests,
     LoadIncomingFriendRequests,

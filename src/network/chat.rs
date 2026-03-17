@@ -1,3 +1,4 @@
+use crate::db::sql_calls::get_message_log;
 use crate::network::Command;
 use crate::network::signable::{Signed, sign};
 use crate::network::{Client, EventLoop};
@@ -22,9 +23,7 @@ pub enum MessageResponse {
 }
 pub enum ChatCommand {
     SendMessage { receiver: PeerId, message: Message },
-    // ReadMessage {
-    //     receiver: PeerId,
-    // },
+    LoadChatLog { from: PeerId, page: usize },
 }
 impl EventLoop {
     pub async fn handle_chat_command(&mut self, command: ChatCommand) {
@@ -34,13 +33,26 @@ impl EventLoop {
                     .behaviour_mut()
                     .direct_message
                     .send_request(&receiver, DirectMessageRequest(message));
-            } // ChatCommand::ReadMessage { receiver } => {
-              //     todo!()
-              //     // self.swarm
-              //     //     .behaviour_mut()
-              //     //     .direct_message
-              //     //     .send_request(&receiver, DirectMessageRequest(1));
-              // }
+            }
+            ChatCommand::LoadChatLog { from, page } => {
+                let res = self
+                    .sqlite_conn
+                    .call(move |c| get_message_log(c, from.to_string(), page))
+                    .await;
+                match res {
+                    Ok(log) => {
+                        self.api_writer_tx
+                            .send(crate::WriteEvent::EventResponse(
+                                crate::UiClientEventResponse::LoadChatlogPage(log),
+                            ))
+                            .expect("to send");
+                    }
+                    Err(err) => {
+                        // TODO: Return an error to the sock
+                        tracing::info!("{err}");
+                    }
+                }
+            }
         }
     }
 }
