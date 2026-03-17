@@ -86,7 +86,7 @@ pub fn setting_definitions() -> &'static [SettingDefinition] {
 }
 pub struct Settings;
 impl Settings {
-    pub fn load() -> HashMap<SettingName, SettingValue> {
+    pub fn load() -> anyhow::Result<HashMap<SettingName, SettingValue>> {
         let settings: HashMap<SettingName, SettingValue> = SETTING_DEFINITIONS
             .iter()
             .map(|def| (def.name, def.default_value.clone()))
@@ -100,8 +100,8 @@ impl Settings {
             Err(err) => {
                 std::fs::File::create(settings_path.clone()).unwrap();
                 tracing::error!("{:?}", err);
-                tracing::warn!("Defaulting to predefined settings");
-                return settings;
+                tracing::warn!("Did you run in setup mode?");
+                return Err(err.into());
             }
         };
         let mut user_settings =
@@ -109,8 +109,8 @@ impl Settings {
                 Ok(s) => s,
                 Err(err) => {
                     tracing::error!("{:?}", err);
-                    tracing::warn!("Defaulting to predefined settings");
-                    return settings;
+                    tracing::warn!("Failed to parse settings");
+                    return Err(err.into());
                 }
             };
 
@@ -124,7 +124,7 @@ impl Settings {
             }
         }
 
-        user_settings
+        Ok(user_settings)
     }
     pub fn save(settings: &HashMap<SettingName, SettingValue>) {
         let settings_path = get_save_file_path(SaveFile::Settings);

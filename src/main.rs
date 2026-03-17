@@ -32,7 +32,7 @@ enum UiClientEvent {
     LoadIncomingFriendRequests,
 }
 #[derive(Deserialize, Serialize)]
-enum UiClientEventResponse {
+pub enum UiClientEventResponse {
     SendMessage,
     SendFriendRequest,
     AcceptFriendRequest,
@@ -56,12 +56,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
+    create_project_dirs().unwrap();
     let mut args = std::env::args().skip(1);
     if matches!(args.next().as_deref(), Some("setup")) {
         setup_tui::run_setup()?;
         return Ok(());
     }
-    create_project_dirs().unwrap();
     // TODO: add an actual sqlite file
     let sqlite = tokio_rusqlite::Connection::open(get_save_file_path(settings::SaveFile::Database))
         .await
@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .await
         .expect("Failed to migrate database");
 
-    let settings = Settings::load();
+    let settings = Settings::load()?;
     // TODO: Check all required settings while loading and return result when loading
     let (api_writer_tx, mut api_writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriteEvent>();
 

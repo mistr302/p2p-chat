@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 pub fn run_setup() -> anyhow::Result<()> {
     create_project_dirs()?;
-    let mut settings = Settings::load();
+    let mut settings = Settings::load()?;
     let definitions = setting_definitions();
     let mut input_buffers = init_input_buffers(definitions, &settings);
     let mut selected_setting = ListState::default().with_selected(Some(0));
