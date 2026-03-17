@@ -49,6 +49,7 @@ pub enum WriteEvent {
     ReceiveMessage(tui::types::Message),
     ReceiveFriendRequest,
     DiscoverMdnsContact,
+    MdnsNameChanged { peer_id: String, name: String },
     EventResponse(UiClientEventResponse),
 }
 #[tokio::main]

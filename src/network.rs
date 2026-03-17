@@ -209,7 +209,7 @@ impl EventLoop {
                             })
                             .await.unwrap();
 
-                        let contact =self.sqlite_conn 
+                        let contact = self.sqlite_conn 
                             .call(move |c| {
                                 let mut stmt = c.prepare("SELECT name, discovery_type FROM contacts WHERE peer_id LIKE ?1")?;
                                 stmt.query_one([peer_id.to_string()], |r| {
@@ -234,6 +234,13 @@ impl EventLoop {
                             )
                             .expect("to be sent");
                         // TODO: Send to ui through the api
+                        let message = crate::tui::types::Message{
+                            content: message.content,
+                            id: message.id,
+                            sender: contact,
+                            status: crate::db::types::MessageStatus::ReceivedNotRead,
+                        };
+                        self.api_writer_tx.send(WriteEvent::ReceiveMessage(message)).expect("to send");
                     }
                     request_response::Message::Response { response, .. } => match response {
                         DirectMessageResponse(MessageResponse::ACK { message_id }) => {
@@ -320,16 +327,19 @@ impl EventLoop {
                         match response {
                             FriendResponse::RequestName { name } => {
                                 tracing::info!("Received valid name response");
-
-                                self.sqlite_conn
+                                let n = name.clone();
+                                let res = self.sqlite_conn
                                     .call(move |c| {
                                         let mut stmt = c.prepare(
                                             "UPDATE contacts SET name=? WHERE peer_id = ?",
                                         )?;
                                         stmt.execute(params![name, peer.to_string()])
                                     })
-                                    .await
-                                    .unwrap();
+                                    .await;
+                                match res {
+                                    Ok(_) => self.api_writer_tx.send(WriteEvent::MdnsNameChanged { peer_id: peer.to_string(), name: n }).expect("to send"),
+                                    Err(err) => tracing::info!("{err}")
+                                }
                                 // TODO: After success send to ui over API
                             }
                             FriendResponse::VerifyName(name) => {}
