@@ -64,14 +64,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     // TODO: add an actual sqlite file
-    let sqlite = tokio_rusqlite::Connection::open(get_save_file_path(settings::SaveFile::Database))
-        .await
-        .expect("Couldnt open sqlite connection");
+    let sqlite = Arc::new(
+        tokio_rusqlite::Connection::open(get_save_file_path(settings::SaveFile::Database))
+            .await
+            .expect("Couldnt open sqlite connection"),
+    );
     // Open unix socket
-    let mut _sock = tokio::net::UnixStream::connect("/tmp/p2p-chat.sock")
-        .await
-        .expect("to connect");
-    let (mut sock_read, mut sock_write) = _sock.split();
+    let listener = tokio::net::UnixListener::bind("/tmp/p2p-chat.sock").expect("to create");
+    let mut _sock = listener.accept().await.expect("to accept");
+
+    let (mut sock_read, mut sock_write) = _sock.0.split();
     // let sqlite = tokio_rusqlite::Connection::open_in_memory()
     //     .await
     //     .expect("Couldnt open sqlite connection");

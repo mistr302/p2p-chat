@@ -33,7 +33,7 @@ pub enum Command {
     FriendCommand(FriendCommand),
 }
 pub(crate) async fn new(
-    sqlite_conn: Connection,
+    sqlite_conn: Arc<Connection>,
     settings: Arc<HashMap<SettingName, SettingValue>>,
     api_writer_tx: UnboundedSender<WriteEvent>,
 ) -> (EventLoop, Client) {
@@ -124,7 +124,7 @@ pub struct EventLoop {
     command_rx: mpsc::Receiver<Command>,
     settings: Arc<HashMap<SettingName, SettingValue>>,
     keys: Keypair,
-    sqlite_conn: Connection,
+    sqlite_conn: Arc<Connection>,
     api_writer_tx: UnboundedSender<WriteEvent>,
     client: Client,
 }
