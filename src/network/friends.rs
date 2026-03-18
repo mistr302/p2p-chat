@@ -1,10 +1,10 @@
-use base64::{Engine as _, engine::general_purpose};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::{
     db::sql_calls::{get_friends, get_incoming_friend_requests, get_pending_friend_requests},
-    network::{Client, EventLoop, HTTP_TRACKER, signable::sign},
+    network::{Client, CommandType, EventLoop, HTTP_TRACKER, signable::sign},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -59,7 +59,7 @@ struct RegisterResponse {
 }
 
 impl EventLoop {
-    pub async fn handle_friend_command(&mut self, command: FriendCommand) {
+    pub async fn handle_friend_command(&mut self, command: FriendCommand, req_id: Uuid) {
         // TODO: Add everything to sqlite
         // Send re-render of contact list to tui
         match command {
@@ -90,8 +90,13 @@ impl EventLoop {
                                 Ok(result) => {
                                     self.api_writer_tx
                                         .send(crate::WriteEvent::EventResponse(
-                                            crate::UiClientEventResponse::SearchPeer {
-                                                username: result.username,
+                                            crate::UiClientEventResponse {
+                                                result: Ok(
+                                                    crate::UiClientEventResponseType::SearchPeer {
+                                                        username: result.username,
+                                                    },
+                                                ),
+                                                req_id,
                                             },
                                         ))
                                         .expect("to send");
@@ -121,8 +126,13 @@ impl EventLoop {
                                 Ok(result) => {
                                     self.api_writer_tx
                                         .send(crate::WriteEvent::EventResponse(
-                                            crate::UiClientEventResponse::SearchUsername {
-                                                peer_id: result.peer_id,
+                                            crate::UiClientEventResponse {
+                                                req_id,
+                                                result: Ok(
+                                                    crate::UiClientEventResponseType::SearchUsername {
+                                                        peer_id: result.peer_id,
+                                                    },
+                                                ),
                                             },
                                         ))
                                         .expect("to send");
@@ -153,9 +163,14 @@ impl EventLoop {
                                     // Username exists, so it's NOT available
                                     self.api_writer_tx
                                         .send(crate::WriteEvent::EventResponse(
-                                            crate::UiClientEventResponse::CheckUsernameAvailability(
-                                                false,
-                                            ),
+                                            crate::UiClientEventResponse {
+                                                req_id,
+                                                result: Ok(
+                                                    crate::UiClientEventResponseType::CheckUsernameAvailability(
+                                                        false,
+                                                    ),
+                                                ),
+                                            },
                                         ))
                                         .expect("to send");
                                 }
@@ -170,7 +185,14 @@ impl EventLoop {
                             // Username not found, so it's available
                             self.api_writer_tx
                                 .send(crate::WriteEvent::EventResponse(
-                                    crate::UiClientEventResponse::CheckUsernameAvailability(true),
+                                    crate::UiClientEventResponse {
+                                        req_id,
+                                        result: Ok(
+                                            crate::UiClientEventResponseType::CheckUsernameAvailability(
+                                                true,
+                                            ),
+                                        ),
+                                    },
                                 ))
                                 .expect("to send");
                         }
@@ -193,7 +215,12 @@ impl EventLoop {
                                 Ok(result) => {
                                     self.api_writer_tx
                                         .send(crate::WriteEvent::EventResponse(
-                                            crate::UiClientEventResponse::ChangeUsername,
+                                            crate::UiClientEventResponse {
+                                                req_id,
+                                                result: Ok(
+                                                    crate::UiClientEventResponseType::ChangeUsername,
+                                                ),
+                                            },
                                         ))
                                         .expect("to send");
                                     tracing::info!(
@@ -223,7 +250,10 @@ impl EventLoop {
                     Ok(f) => {
                         self.api_writer_tx
                             .send(crate::WriteEvent::EventResponse(
-                                crate::UiClientEventResponse::LoadFriends(f),
+                                crate::UiClientEventResponse {
+                                    req_id,
+                                    result: Ok(crate::UiClientEventResponseType::LoadFriends(f)),
+                                },
                             ))
                             .expect("to send");
                     }
@@ -239,7 +269,14 @@ impl EventLoop {
                     Ok(requests) => {
                         self.api_writer_tx
                             .send(crate::WriteEvent::EventResponse(
-                                crate::UiClientEventResponse::LoadPendingFriendRequests(requests),
+                                crate::UiClientEventResponse {
+                                    req_id,
+                                    result: Ok(
+                                        crate::UiClientEventResponseType::LoadPendingFriendRequests(
+                                            requests,
+                                        ),
+                                    ),
+                                },
                             ))
                             .expect("to send");
                     }
@@ -254,7 +291,14 @@ impl EventLoop {
                     Ok(requests) => {
                         self.api_writer_tx
                             .send(crate::WriteEvent::EventResponse(
-                                crate::UiClientEventResponse::LoadIncomingFriendRequests(requests),
+                                crate::UiClientEventResponse {
+                                    req_id,
+                                    result: Ok(
+                                        crate::UiClientEventResponseType::LoadIncomingFriendRequests(
+                                            requests,
+                                        ),
+                                    ),
+                                },
                             ))
                             .expect("to send");
                     }
@@ -269,90 +313,120 @@ impl EventLoop {
 impl Client {
     pub async fn request_name(&mut self, peer: PeerId) {
         self.command_sender
-            .send(super::Command::FriendCommand(FriendCommand::RequestName {
-                peer,
-            }))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::RequestName { peer }),
+            })
             .await
             .expect("to send request");
         tracing::info!("Sending name req");
     }
     pub async fn send_friend_request(&mut self, peer: PeerId) {
         self.command_sender
-            .send(super::Command::FriendCommand(FriendCommand::AddFriend {
-                peer,
-            }))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::AddFriend { peer }),
+            })
             .await
             .expect("to send request");
     }
     pub async fn accept_friend_req(&mut self, peer: PeerId) {
         self.command_sender
-            .send(super::Command::FriendCommand(FriendCommand::AcceptFriend {
-                peer,
-                decision: true,
-            }))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::AcceptFriend {
+                    peer,
+                    decision: true,
+                }),
+            })
             .await
             .expect("to send request");
     }
     pub async fn deny_friend_req(&mut self, peer: PeerId) {
         self.command_sender
-            .send(super::Command::FriendCommand(FriendCommand::AcceptFriend {
-                peer,
-                decision: false,
-            }))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::AcceptFriend {
+                    peer,
+                    decision: false,
+                }),
+            })
             .await
             .expect("to send request");
     }
     pub async fn search_peer(&mut self, id: String) {
         self.command_sender
-            .send(super::Command::FriendCommand(FriendCommand::SearchPeer {
-                id,
-            }))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::SearchPeer { id }),
+            })
             .await
             .expect("to send request");
     }
     pub async fn search_username(&mut self, username: String) {
         self.command_sender
-            .send(super::Command::FriendCommand(
-                FriendCommand::SearchUsername { username },
-            ))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::SearchUsername { username }),
+            })
             .await
             .expect("to send request");
     }
     pub async fn check_username_availability(&mut self, username: String) {
         self.command_sender
-            .send(super::Command::FriendCommand(
-                FriendCommand::CheckUsernameAvailability { username },
-            ))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::CheckUsernameAvailability {
+                    username,
+                }),
+            })
             .await
             .expect("to send request");
     }
     pub async fn change_username(&mut self, username: String) {
         self.command_sender
-            .send(super::Command::FriendCommand(
-                FriendCommand::ChangeUsername { username },
-            ))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::ChangeUsername { username }),
+            })
             .await
             .expect("to send request");
     }
     pub async fn load_friends(&mut self) {
         self.command_sender
-            .send(super::Command::FriendCommand(FriendCommand::LoadFriends))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::LoadFriends),
+            })
             .await
             .expect("to send request");
     }
     pub async fn load_pending_friend_requests(&mut self) {
         self.command_sender
-            .send(super::Command::FriendCommand(
-                FriendCommand::LoadPendingFriendRequests,
-            ))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::LoadPendingFriendRequests),
+            })
             .await
             .expect("to send request");
     }
     pub async fn load_incoming_friend_requests(&mut self) {
         self.command_sender
-            .send(super::Command::FriendCommand(
-                FriendCommand::LoadIncomingFriendRequests,
-            ))
+            .send(super::Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::FriendCommand(FriendCommand::LoadIncomingFriendRequests),
+            })
             .await
             .expect("to send request");
     }

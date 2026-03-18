@@ -1,7 +1,7 @@
 use crate::db::sql_calls::get_message_log;
-use crate::network::Command;
 use crate::network::signable::{Signed, sign};
 use crate::network::{Client, EventLoop};
+use crate::network::{Command, CommandType};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -26,7 +26,7 @@ pub enum ChatCommand {
     LoadChatLog { from_peer_id: String, page: usize },
 }
 impl EventLoop {
-    pub async fn handle_chat_command(&mut self, command: ChatCommand) {
+    pub async fn handle_chat_command(&mut self, command: ChatCommand, req_id: Uuid) {
         match command {
             ChatCommand::SendMessage { receiver, message } => {
                 self.swarm
@@ -43,7 +43,12 @@ impl EventLoop {
                     Ok(log) => {
                         self.api_writer_tx
                             .send(crate::WriteEvent::EventResponse(
-                                crate::UiClientEventResponse::LoadChatlogPage(log),
+                                crate::UiClientEventResponse {
+                                    req_id,
+                                    result: Ok(crate::UiClientEventResponseType::LoadChatlogPage(
+                                        log,
+                                    )),
+                                },
                             ))
                             .expect("to send");
                     }
@@ -63,19 +68,21 @@ impl Client {
             id: uuid::Uuid::new_v4(),
         };
         self.command_sender
-            .send(Command::ChatCommand(ChatCommand::SendMessage {
-                receiver,
-                message,
-            }))
+            .send(Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::ChatCommand(ChatCommand::SendMessage { receiver, message }),
+            })
             .await
             .expect("to send");
     }
     pub async fn load_chatlog_page(&mut self, from_peer_id: String, page: usize) {
         self.command_sender
-            .send(Command::ChatCommand(ChatCommand::LoadChatLog {
-                from_peer_id,
-                page,
-            }))
+            .send(Command {
+                // TODO: pass in the actual id instead of generating
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::ChatCommand(ChatCommand::LoadChatLog { from_peer_id, page }),
+            })
             .await
             .expect("to send");
     }

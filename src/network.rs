@@ -9,6 +9,7 @@ use libp2p::{
     tcp, yamux,
 };
 use num_enum::TryFromPrimitive;
+use uuid::Uuid;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::mpsc::{self, UnboundedSender};
@@ -27,9 +28,13 @@ pub mod friends;
 pub mod signable;
 
 pub static HTTP_TRACKER: &str = "localhost:8000";
-pub enum Command {
+pub enum CommandType {
     ChatCommand(ChatCommand),
     FriendCommand(FriendCommand),
+}
+pub struct Command {
+    id: Uuid,
+    cmd_type: CommandType
 }
 pub(crate) async fn new(
     sqlite_conn: Arc<Connection>,
@@ -137,9 +142,9 @@ impl EventLoop {
             tokio::select! {
                 event = self.swarm.select_next_some() => self.handle_event(event).await,
                 Some(command) = self.command_rx.recv() => {
-                    match command {
-                        Command::ChatCommand(chat) => self.handle_chat_command(chat).await,
-                        Command::FriendCommand(friend) => self.handle_friend_command(friend).await,
+                    match command.cmd_type {
+                        CommandType::ChatCommand(chat) => self.handle_chat_command(chat, command.id).await,
+                        CommandType::FriendCommand(friend) => self.handle_friend_command(friend, command.id).await,
                     }
                 },
             }

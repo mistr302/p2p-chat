@@ -10,7 +10,12 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{error::Error, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
+use uuid::Uuid;
+#[derive(Deserialize, Serialize)]
+struct UiClientRequest {
+    req_id: Uuid,
+    event: UiClientEvent,
+}
 #[derive(Deserialize, Serialize)]
 enum UiClientEvent {
     SendMessage { peer_id: String, message: String },
@@ -27,7 +32,14 @@ enum UiClientEvent {
     LoadIncomingFriendRequests,
 }
 #[derive(Deserialize, Serialize)]
-pub enum UiClientEventResponse {
+pub enum UiClientEventResponseError {}
+#[derive(Deserialize, Serialize)]
+pub struct UiClientEventResponse {
+    req_id: Uuid,
+    result: Result<UiClientEventResponseType, UiClientEventResponseError>,
+}
+#[derive(Deserialize, Serialize)]
+pub enum UiClientEventResponseType {
     SendMessage,
     SendFriendRequest,
     AcceptFriendRequest,
@@ -87,8 +99,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // let child_token = token.child_token();
     tokio::spawn(event_loop.run());
     tokio::select! {
-        event = read_event(&mut sock_read) => {
-            match event? {
+        req = read_event(&mut sock_read) => {
+            match req?.event {
                 UiClientEvent::SendMessage { peer_id, message } => {
                     client
                         .send_message(PeerId::from_str(&peer_id).unwrap(), message)
@@ -133,7 +145,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     Ok(())
 }
-async fn read_event(sock_read: &mut (impl AsyncReadExt + Unpin)) -> anyhow::Result<UiClientEvent> {
+async fn read_event(
+    sock_read: &mut (impl AsyncReadExt + Unpin),
+) -> anyhow::Result<UiClientRequest> {
     let bytes = sock_read.read_u64().await?;
     let mut buf = vec![0u8; bytes as usize];
     sock_read.read_exact(&mut buf).await?;
