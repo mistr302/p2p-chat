@@ -60,7 +60,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
         setup_tui::run_setup()?;
         return Ok(());
     }
-    // TODO: add an actual sqlite file
     let sqlite = Arc::new(
         tokio_rusqlite::Connection::open(get_save_file_path(settings::SaveFile::Database))
             .await
@@ -77,9 +76,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (mut sock_read, mut sock_write) = _sock.0.split();
 
     db::migrate_db::migrate(&sqlite).await?;
-
+    // TODO: Write an error to sock if failed to load settings
     let settings = Settings::load()?;
-    // TODO: Check all required settings while loading and return result when loading
     let (api_writer_tx, mut api_writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriteEvent>();
 
     let settings = Arc::new(settings);
