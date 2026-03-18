@@ -10,12 +10,7 @@ where
     let sig = keypair.sign(&serialized).expect("Failed to sign");
     Signed {
         sig,
-        pub_key: keypair
-            .public()
-            .try_into_ed25519()
-            .unwrap()
-            .to_bytes()
-            .to_vec(),
+        pub_key: keypair.to_protobuf_encoding().expect("to work"),
         content: value,
     }
 }

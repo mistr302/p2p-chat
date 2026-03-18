@@ -34,7 +34,7 @@ pub enum UiClientEventResponse {
     DenyFriendRequest,
     SearchPeer { username: String },
     SearchUsername { peer_id: String },
-    CheckUsernameAvailability,
+    CheckUsernameAvailability(bool),
     ChangeUsername,
     LoadChatlogPage(Vec<crate::tui::types::Message>),
     LoadFriends(Vec<crate::tui::types::Contact>),

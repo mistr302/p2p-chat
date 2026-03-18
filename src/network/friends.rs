@@ -1,9 +1,10 @@
+use base64::{Engine as _, engine::general_purpose};
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     db::sql_calls::{get_friends, get_incoming_friend_requests, get_pending_friend_requests},
-    network::{Client, EventLoop},
+    network::{Client, EventLoop, HTTP_TRACKER, signable::sign},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,6 +33,31 @@ pub enum FriendCommand {
     LoadPendingFriendRequests,
     LoadIncomingFriendRequests,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PeerSearchResponse {
+    peer_id: String,
+    username: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct UsernamePayload {
+    username: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RegisterRequest {
+    pub_key: String,
+    content: String,
+    sig: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct RegisterResponse {
+    peer_id: String,
+    username: String,
+}
+
 impl EventLoop {
     pub async fn handle_friend_command(&mut self, command: FriendCommand) {
         // TODO: Add everything to sqlite
@@ -55,10 +81,142 @@ impl EventLoop {
                     .friends
                     .send_request(&peer, FriendRequest::AcceptFriend { decision });
             }
-            FriendCommand::SearchPeer { id } => {}
-            FriendCommand::SearchUsername { username } => unimplemented!(),
-            FriendCommand::CheckUsernameAvailability { username } => unimplemented!(),
-            FriendCommand::ChangeUsername { username } => unimplemented!(),
+            FriendCommand::SearchPeer { id } => {
+                let url = format!("http://{}/find-by-id?q={}", HTTP_TRACKER, id);
+                match self.reqwest_client.get(&url).send().await {
+                    Ok(response) => {
+                        if response.status().is_success() {
+                            match response.json::<PeerSearchResponse>().await {
+                                Ok(result) => {
+                                    self.api_writer_tx
+                                        .send(crate::WriteEvent::EventResponse(
+                                            crate::UiClientEventResponse::SearchPeer {
+                                                username: result.username,
+                                            },
+                                        ))
+                                        .expect("to send");
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to parse SearchPeer response: {e}");
+                                }
+                            }
+                        } else {
+                            tracing::error!(
+                                "SearchPeer request failed with status: {}",
+                                response.status()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("SearchPeer request error: {e}");
+                    }
+                }
+            }
+            FriendCommand::SearchUsername { username } => {
+                let url = format!("http://{}/find-by-name?q={}", HTTP_TRACKER, username);
+                match self.reqwest_client.get(&url).send().await {
+                    Ok(response) => {
+                        if response.status().is_success() {
+                            match response.json::<PeerSearchResponse>().await {
+                                Ok(result) => {
+                                    self.api_writer_tx
+                                        .send(crate::WriteEvent::EventResponse(
+                                            crate::UiClientEventResponse::SearchUsername {
+                                                peer_id: result.peer_id,
+                                            },
+                                        ))
+                                        .expect("to send");
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to parse SearchUsername response: {e}");
+                                }
+                            }
+                        } else {
+                            tracing::error!(
+                                "SearchUsername request failed with status: {}",
+                                response.status()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("SearchUsername request error: {e}");
+                    }
+                }
+            }
+            FriendCommand::CheckUsernameAvailability { username } => {
+                let url = format!("http://{}/find-by-name?q={}", HTTP_TRACKER, username);
+                match self.reqwest_client.get(&url).send().await {
+                    Ok(response) => {
+                        if response.status().is_success() {
+                            match response.json::<PeerSearchResponse>().await {
+                                Ok(_) => {
+                                    // Username exists, so it's NOT available
+                                    self.api_writer_tx
+                                        .send(crate::WriteEvent::EventResponse(
+                                            crate::UiClientEventResponse::CheckUsernameAvailability(
+                                                false,
+                                            ),
+                                        ))
+                                        .expect("to send");
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to parse CheckUsernameAvailability response: {e}"
+                                    );
+                                    // TODO: Handle parse error properly
+                                }
+                            }
+                        } else {
+                            // Username not found, so it's available
+                            self.api_writer_tx
+                                .send(crate::WriteEvent::EventResponse(
+                                    crate::UiClientEventResponse::CheckUsernameAvailability(true),
+                                ))
+                                .expect("to send");
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("CheckUsernameAvailability request error: {e}");
+                        // TODO: Handle request error properly
+                    }
+                }
+            }
+            FriendCommand::ChangeUsername { username } => {
+                let payload = UsernamePayload { username };
+                let signed = sign(payload, &self.keys);
+
+                let url = format!("http://{}/register", HTTP_TRACKER);
+                match self.reqwest_client.post(&url).json(&signed).send().await {
+                    Ok(response) => {
+                        if response.status().is_success() {
+                            match response.json::<RegisterResponse>().await {
+                                Ok(result) => {
+                                    self.api_writer_tx
+                                        .send(crate::WriteEvent::EventResponse(
+                                            crate::UiClientEventResponse::ChangeUsername,
+                                        ))
+                                        .expect("to send");
+                                    tracing::info!(
+                                        "Username changed successfully to: {}",
+                                        result.username
+                                    );
+                                }
+                                Err(e) => {
+                                    tracing::error!("Failed to parse ChangeUsername response: {e}");
+                                }
+                            }
+                        } else {
+                            tracing::error!(
+                                "ChangeUsername request failed with status: {}",
+                                response.status()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("ChangeUsername request error: {e}");
+                    }
+                }
+            }
             FriendCommand::LoadFriends => {
                 let friends = self.sqlite_conn.call(get_friends).await;
                 match friends {
