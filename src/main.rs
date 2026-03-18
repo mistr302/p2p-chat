@@ -16,7 +16,9 @@ enum UiClientEvent {
     SendMessage { peer_id: String, message: String },
     SendFriendRequest { peer_id: String },
     AcceptFriendRequest { peer_id: String },
+    DenyFriendRequest { peer_id: String },
     SearchUsername { username: String },
+    SearchPeer { peer_id: String },
     CheckUsernameAvailability { username: String },
     ChangeUsername { username: String },
     LoadChatlogPage { from_peer_id: String, page: usize },
@@ -29,7 +31,9 @@ pub enum UiClientEventResponse {
     SendMessage,
     SendFriendRequest,
     AcceptFriendRequest,
-    SearchUsername,
+    DenyFriendRequest,
+    SearchPeer { username: String },
+    SearchUsername { peer_id: String },
     CheckUsernameAvailability,
     ChangeUsername,
     LoadChatlogPage(Vec<crate::tui::types::Message>),
@@ -102,7 +106,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         .accept_friend_req(PeerId::from_str(&peer_id).unwrap())
                         .await
                 }
+                UiClientEvent::DenyFriendRequest { peer_id } => {
+                    client
+                        .deny_friend_req(PeerId::from_str(&peer_id).unwrap())
+                        .await
+                }
                 UiClientEvent::SearchUsername { username } => client.search_username(username).await,
+                UiClientEvent::SearchPeer { peer_id } => client.search_peer(peer_id).await,
                 UiClientEvent::CheckUsernameAvailability { username } => {
                     client.check_username_availability(username).await
                 }

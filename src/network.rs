@@ -26,6 +26,7 @@ pub mod chat;
 pub mod friends;
 pub mod signable;
 
+pub static HTTP_TRACKER: &str = "localhost:8000";
 pub enum Command {
     ChatCommand(ChatCommand),
     FriendCommand(FriendCommand),
@@ -101,6 +102,7 @@ pub(crate) async fn new(
         api_writer_tx,
         sqlite_conn,
         client: client.clone(),
+        reqwest_client: reqwest::Client::new()
     };
     Ok((event_loop, client))
 }
@@ -120,6 +122,7 @@ pub struct EventLoop {
     sqlite_conn: Arc<Connection>,
     api_writer_tx: UnboundedSender<WriteEvent>,
     client: Client,
+    reqwest_client: reqwest::Client
 }
 #[derive(Clone)]
 pub(crate) struct Client {

@@ -55,7 +55,7 @@ impl EventLoop {
                     .friends
                     .send_request(&peer, FriendRequest::AcceptFriend { decision });
             }
-            FriendCommand::SearchPeer { id } => unimplemented!(),
+            FriendCommand::SearchPeer { id } => {}
             FriendCommand::SearchUsername { username } => unimplemented!(),
             FriendCommand::CheckUsernameAvailability { username } => unimplemented!(),
             FriendCommand::ChangeUsername { username } => unimplemented!(),
@@ -74,6 +74,7 @@ impl EventLoop {
                     }
                 }
             }
+            // TODO: Send errors to the api
             FriendCommand::LoadPendingFriendRequests => {
                 let pending_requests = self.sqlite_conn.call(get_pending_friend_requests).await;
                 match pending_requests {
