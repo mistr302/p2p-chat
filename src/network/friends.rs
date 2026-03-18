@@ -2,7 +2,7 @@ use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    db::sql_calls::get_friends,
+    db::sql_calls::{get_friends, get_incoming_friend_requests, get_pending_friend_requests},
     network::{Client, EventLoop},
 };
 
@@ -74,8 +74,36 @@ impl EventLoop {
                     }
                 }
             }
-            FriendCommand::LoadPendingFriendRequests => {}
-            FriendCommand::LoadIncomingFriendRequests => {}
+            FriendCommand::LoadPendingFriendRequests => {
+                let pending_requests = self.sqlite_conn.call(get_pending_friend_requests).await;
+                match pending_requests {
+                    Ok(requests) => {
+                        self.api_writer_tx
+                            .send(crate::WriteEvent::EventResponse(
+                                crate::UiClientEventResponse::LoadPendingFriendRequests(requests),
+                            ))
+                            .expect("to send");
+                    }
+                    Err(e) => {
+                        tracing::info!("{e}");
+                    }
+                }
+            }
+            FriendCommand::LoadIncomingFriendRequests => {
+                let incoming_requests = self.sqlite_conn.call(get_incoming_friend_requests).await;
+                match incoming_requests {
+                    Ok(requests) => {
+                        self.api_writer_tx
+                            .send(crate::WriteEvent::EventResponse(
+                                crate::UiClientEventResponse::LoadIncomingFriendRequests(requests),
+                            ))
+                            .expect("to send");
+                    }
+                    Err(e) => {
+                        tracing::info!("{e}");
+                    }
+                }
+            }
         };
     }
 }

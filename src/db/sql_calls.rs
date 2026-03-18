@@ -49,3 +49,37 @@ pub fn get_friends(
     }
     Ok(contacts)
 }
+pub fn get_pending_friend_requests(
+    conn: &mut Connection,
+) -> tokio_rusqlite::Result<Vec<crate::tui::types::Contact>> {
+    let mut stmt = conn.prepare("SELECT c.peer_id, c.discovery_type, c.name FROM contacts AS c INNER JOIN pending_friend_requests AS p ON c.peer_id = p.peer_id WHERE p.request_type = ?")?;
+
+    let mut rows = stmt.query(params![crate::db::types::FriendRequestType::Outgoing as u8])?;
+    let mut contacts = Vec::new();
+    while let Ok(Some(r)) = rows.next() {
+        let c = crate::tui::types::Contact {
+            peer_id: r.get(0)?,
+            discovery_type: DiscoveryType::try_from_primitive(r.get(1)?).unwrap(),
+            name: r.get(2)?,
+        };
+        contacts.push(c);
+    }
+    Ok(contacts)
+}
+pub fn get_incoming_friend_requests(
+    conn: &mut Connection,
+) -> tokio_rusqlite::Result<Vec<crate::tui::types::Contact>> {
+    let mut stmt = conn.prepare("SELECT c.peer_id, c.discovery_type, c.name FROM contacts AS c INNER JOIN pending_friend_requests AS p ON c.peer_id = p.peer_id WHERE p.request_type = ?")?;
+
+    let mut rows = stmt.query(params![crate::db::types::FriendRequestType::Incoming as u8])?;
+    let mut contacts = Vec::new();
+    while let Ok(Some(r)) = rows.next() {
+        let c = crate::tui::types::Contact {
+            peer_id: r.get(0)?,
+            discovery_type: DiscoveryType::try_from_primitive(r.get(1)?).unwrap(),
+            name: r.get(2)?,
+        };
+        contacts.push(c);
+    }
+    Ok(contacts)
+}
