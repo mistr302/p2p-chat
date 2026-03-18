@@ -11,12 +11,12 @@ use std::str::FromStr;
 use std::{error::Error, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 struct UiClientRequest {
     req_id: Uuid,
     event: UiClientEvent,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone)]
 enum UiClientEvent {
     SendMessage { peer_id: String, message: String },
     SendFriendRequest { peer_id: String },
@@ -100,38 +100,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tokio::spawn(event_loop.run());
     tokio::select! {
         req = read_event(&mut sock_read) => {
-            match req?.event {
+            let request = req.clone()?;
+            match request.event {
                 UiClientEvent::SendMessage { peer_id, message } => {
                     client
-                        .send_message(PeerId::from_str(&peer_id).unwrap(), message)
+                        .send_message(PeerId::from_str(&peer_id).unwrap(), message, req?.req_id)
                         .await;
                 }
                 UiClientEvent::SendFriendRequest { peer_id } => {
                     client
-                        .send_friend_request(PeerId::from_str(&peer_id).unwrap())
+                        .send_friend_request(PeerId::from_str(&peer_id).unwrap(), req?.req_id)
                         .await
                 }
                 UiClientEvent::AcceptFriendRequest { peer_id } => {
                     client
-                        .accept_friend_req(PeerId::from_str(&peer_id).unwrap())
+                        .accept_friend_req(PeerId::from_str(&peer_id).unwrap(), req?.req_id)
                         .await
                 }
                 UiClientEvent::DenyFriendRequest { peer_id } => {
                     client
-                        .deny_friend_req(PeerId::from_str(&peer_id).unwrap())
+                        .deny_friend_req(PeerId::from_str(&peer_id).unwrap(), req?.req_id)
                         .await
                 }
-                UiClientEvent::SearchUsername { username } => client.search_username(username).await,
-                UiClientEvent::SearchPeer { peer_id } => client.search_peer(peer_id).await,
+                UiClientEvent::SearchUsername { username } => client.search_username(username, req?.req_id).await,
+                UiClientEvent::SearchPeer { peer_id } => client.search_peer(peer_id, req?.req_id).await,
                 UiClientEvent::CheckUsernameAvailability { username } => {
-                    client.check_username_availability(username).await
+                    client.check_username_availability(username, req?.req_id).await
                 }
-                UiClientEvent::ChangeUsername { username } => client.change_username(username).await,
-                UiClientEvent::LoadChatlogPage { from_peer_id, page } => client.load_chatlog_page(from_peer_id.to_string(), page).await,
-                UiClientEvent::LoadFriends => client.load_friends().await,
-                UiClientEvent::LoadPendingFriendRequests => client.load_pending_friend_requests().await,
+                UiClientEvent::ChangeUsername { username } => client.change_username(username, req?.req_id).await,
+                UiClientEvent::LoadChatlogPage { from_peer_id, page } => client.load_chatlog_page(from_peer_id.to_string(), page, req?.req_id).await,
+                UiClientEvent::LoadFriends => client.load_friends(req?.req_id).await,
+                UiClientEvent::LoadPendingFriendRequests => client.load_pending_friend_requests(req?.req_id).await,
                 UiClientEvent::LoadIncomingFriendRequests => {
-                    client.load_incoming_friend_requests().await
+                    client.load_incoming_friend_requests(req?.req_id).await
                 }
             }
         }
@@ -145,6 +146,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     Ok(())
 }
+// TODO: instead of anyhow return a normal error
 async fn read_event(
     sock_read: &mut (impl AsyncReadExt + Unpin),
 ) -> anyhow::Result<UiClientRequest> {

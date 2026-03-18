@@ -29,7 +29,8 @@ impl EventLoop {
     pub async fn handle_chat_command(&mut self, command: ChatCommand, req_id: Uuid) {
         match command {
             ChatCommand::SendMessage { receiver, message } => {
-                self.swarm
+                let id = self
+                    .swarm
                     .behaviour_mut()
                     .direct_message
                     .send_request(&receiver, DirectMessageRequest(message));
@@ -62,7 +63,7 @@ impl EventLoop {
     }
 }
 impl Client {
-    pub async fn send_message(&mut self, receiver: PeerId, message: String) {
+    pub async fn send_message(&mut self, receiver: PeerId, message: String, req_id: Uuid) {
         let message = Message {
             content: message,
             id: uuid::Uuid::new_v4(),
@@ -70,17 +71,17 @@ impl Client {
         self.command_sender
             .send(Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::ChatCommand(ChatCommand::SendMessage { receiver, message }),
             })
             .await
             .expect("to send");
     }
-    pub async fn load_chatlog_page(&mut self, from_peer_id: String, page: usize) {
+    pub async fn load_chatlog_page(&mut self, from_peer_id: String, page: usize, req_id: Uuid) {
         self.command_sender
             .send(Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::ChatCommand(ChatCommand::LoadChatLog { from_peer_id, page }),
             })
             .await

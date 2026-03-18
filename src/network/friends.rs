@@ -322,21 +322,21 @@ impl Client {
             .expect("to send request");
         tracing::info!("Sending name req");
     }
-    pub async fn send_friend_request(&mut self, peer: PeerId) {
+    pub async fn send_friend_request(&mut self, peer: PeerId, req_id: Uuid) {
         self.command_sender
             .send(super::Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::AddFriend { peer }),
             })
             .await
             .expect("to send request");
     }
-    pub async fn accept_friend_req(&mut self, peer: PeerId) {
+    pub async fn accept_friend_req(&mut self, peer: PeerId, req_id: Uuid) {
         self.command_sender
             .send(super::Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::AcceptFriend {
                     peer,
                     decision: true,
@@ -345,11 +345,11 @@ impl Client {
             .await
             .expect("to send request");
     }
-    pub async fn deny_friend_req(&mut self, peer: PeerId) {
+    pub async fn deny_friend_req(&mut self, peer: PeerId, req_id: Uuid) {
         self.command_sender
             .send(super::Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::AcceptFriend {
                     peer,
                     decision: false,
@@ -358,31 +358,31 @@ impl Client {
             .await
             .expect("to send request");
     }
-    pub async fn search_peer(&mut self, id: String) {
+    pub async fn search_peer(&mut self, id: String, req_id: Uuid) {
         self.command_sender
             .send(super::Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::SearchPeer { id }),
             })
             .await
             .expect("to send request");
     }
-    pub async fn search_username(&mut self, username: String) {
+    pub async fn search_username(&mut self, username: String, req_id: Uuid) {
         self.command_sender
             .send(super::Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::SearchUsername { username }),
             })
             .await
             .expect("to send request");
     }
-    pub async fn check_username_availability(&mut self, username: String) {
+    pub async fn check_username_availability(&mut self, username: String, req_id: Uuid) {
         self.command_sender
             .send(super::Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::CheckUsernameAvailability {
                     username,
                 }),
@@ -390,41 +390,41 @@ impl Client {
             .await
             .expect("to send request");
     }
-    pub async fn change_username(&mut self, username: String) {
+    pub async fn change_username(&mut self, username: String, req_id: Uuid) {
         self.command_sender
             .send(super::Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::ChangeUsername { username }),
             })
             .await
             .expect("to send request");
     }
-    pub async fn load_friends(&mut self) {
+    pub async fn load_friends(&mut self, req_id: Uuid) {
         self.command_sender
             .send(super::Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::LoadFriends),
             })
             .await
             .expect("to send request");
     }
-    pub async fn load_pending_friend_requests(&mut self) {
+    pub async fn load_pending_friend_requests(&mut self, req_id: Uuid) {
         self.command_sender
             .send(super::Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::LoadPendingFriendRequests),
             })
             .await
             .expect("to send request");
     }
-    pub async fn load_incoming_friend_requests(&mut self) {
+    pub async fn load_incoming_friend_requests(&mut self, req_id: Uuid) {
         self.command_sender
             .send(super::Command {
                 // TODO: pass in the actual id instead of generating
-                id: Uuid::new_v4(),
+                id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::LoadIncomingFriendRequests),
             })
             .await
