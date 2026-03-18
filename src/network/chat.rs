@@ -23,7 +23,7 @@ pub enum MessageResponse {
 }
 pub enum ChatCommand {
     SendMessage { receiver: PeerId, message: Message },
-    LoadChatLog { from: PeerId, page: usize },
+    LoadChatLog { from_peer_id: String, page: usize },
 }
 impl EventLoop {
     pub async fn handle_chat_command(&mut self, command: ChatCommand) {
@@ -34,10 +34,10 @@ impl EventLoop {
                     .direct_message
                     .send_request(&receiver, DirectMessageRequest(message));
             }
-            ChatCommand::LoadChatLog { from, page } => {
+            ChatCommand::LoadChatLog { from_peer_id, page } => {
                 let res = self
                     .sqlite_conn
-                    .call(move |c| get_message_log(c, from.to_string(), page))
+                    .call(move |c| get_message_log(c, from_peer_id, page))
                     .await;
                 match res {
                     Ok(log) => {
@@ -70,7 +70,13 @@ impl Client {
             .await
             .expect("to send");
     }
-    pub async fn load_chatlog_page(&mut self) {
-        unimplemented!()
+    pub async fn load_chatlog_page(&mut self, from_peer_id: String, page: usize) {
+        self.command_sender
+            .send(Command::ChatCommand(ChatCommand::LoadChatLog {
+                from_peer_id,
+                page,
+            }))
+            .await
+            .expect("to send");
     }
 }

@@ -19,7 +19,7 @@ enum UiClientEvent {
     SearchUsername { username: String },
     CheckUsernameAvailability { username: String },
     ChangeUsername { username: String },
-    LoadChatlogPage,
+    LoadChatlogPage { from_peer_id: String, page: usize },
     LoadFriends,
     LoadPendingFriendRequests,
     LoadIncomingFriendRequests,
@@ -33,9 +33,9 @@ pub enum UiClientEventResponse {
     CheckUsernameAvailability,
     ChangeUsername,
     LoadChatlogPage(Vec<crate::tui::types::Message>),
-    LoadFriends,
-    LoadPendingFriendRequests,
-    LoadIncomingFriendRequests,
+    LoadFriends(Vec<crate::tui::types::Contact>),
+    LoadPendingFriendRequests(Vec<crate::tui::types::Contact>),
+    LoadIncomingFriendRequests(Vec<crate::tui::types::Contact>),
 }
 #[derive(Deserialize, Serialize)]
 pub enum WriteEvent {
@@ -107,7 +107,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     client.check_username_availability(username).await
                 }
                 UiClientEvent::ChangeUsername { username } => client.change_username(username).await,
-                UiClientEvent::LoadChatlogPage => client.load_chatlog_page().await,
+                UiClientEvent::LoadChatlogPage { from_peer_id, page } => client.load_chatlog_page(from_peer_id.to_string(), page).await,
                 UiClientEvent::LoadFriends => client.load_friends().await,
                 UiClientEvent::LoadPendingFriendRequests => client.load_pending_friend_requests().await,
                 UiClientEvent::LoadIncomingFriendRequests => {

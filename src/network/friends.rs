@@ -1,7 +1,10 @@
 use libp2p::PeerId;
 use serde::{Deserialize, Serialize};
 
-use crate::network::{Client, EventLoop};
+use crate::{
+    db::sql_calls::get_friends,
+    network::{Client, EventLoop},
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum FriendRequest {
@@ -21,27 +24,58 @@ pub enum FriendCommand {
     RequestName { peer: PeerId },
     AddFriend { peer: PeerId },
     AcceptFriend { peer: PeerId, decision: bool },
+    SearchPeer { id: String },
+    SearchUsername { username: String },
+    CheckUsernameAvailability { username: String },
+    ChangeUsername { username: String },
+    LoadFriends,
+    LoadPendingFriendRequests,
+    LoadIncomingFriendRequests,
 }
 impl EventLoop {
     pub async fn handle_friend_command(&mut self, command: FriendCommand) {
         // TODO: Add everything to sqlite
         // Send re-render of contact list to tui
         match command {
-            FriendCommand::RequestName { peer } => self
-                .swarm
-                .behaviour_mut()
-                .friends
-                .send_request(&peer, FriendRequest::RequestName),
-            FriendCommand::AddFriend { peer } => self
-                .swarm
-                .behaviour_mut()
-                .friends
-                .send_request(&peer, FriendRequest::AddFriend),
-            FriendCommand::AcceptFriend { peer, decision } => self
-                .swarm
-                .behaviour_mut()
-                .friends
-                .send_request(&peer, FriendRequest::AcceptFriend { decision }),
+            FriendCommand::RequestName { peer } => {
+                self.swarm
+                    .behaviour_mut()
+                    .friends
+                    .send_request(&peer, FriendRequest::RequestName);
+            }
+            FriendCommand::AddFriend { peer } => {
+                self.swarm
+                    .behaviour_mut()
+                    .friends
+                    .send_request(&peer, FriendRequest::AddFriend);
+            }
+            FriendCommand::AcceptFriend { peer, decision } => {
+                self.swarm
+                    .behaviour_mut()
+                    .friends
+                    .send_request(&peer, FriendRequest::AcceptFriend { decision });
+            }
+            FriendCommand::SearchPeer { id } => unimplemented!(),
+            FriendCommand::SearchUsername { username } => unimplemented!(),
+            FriendCommand::CheckUsernameAvailability { username } => unimplemented!(),
+            FriendCommand::ChangeUsername { username } => unimplemented!(),
+            FriendCommand::LoadFriends => {
+                let friends = self.sqlite_conn.call(get_friends).await;
+                match friends {
+                    Ok(f) => {
+                        self.api_writer_tx
+                            .send(crate::WriteEvent::EventResponse(
+                                crate::UiClientEventResponse::LoadFriends(f),
+                            ))
+                            .expect("to send");
+                    }
+                    Err(e) => {
+                        tracing::info!("{e}");
+                    }
+                }
+            }
+            FriendCommand::LoadPendingFriendRequests => {}
+            FriendCommand::LoadIncomingFriendRequests => {}
         };
     }
 }
@@ -81,26 +115,59 @@ impl Client {
             .await
             .expect("to send request");
     }
-    pub async fn search_peer(&mut self, name: String) {
-        unimplemented!()
+    pub async fn search_peer(&mut self, id: String) {
+        self.command_sender
+            .send(super::Command::FriendCommand(FriendCommand::SearchPeer {
+                id,
+            }))
+            .await
+            .expect("to send request");
     }
     pub async fn search_username(&mut self, username: String) {
-        unimplemented!()
+        self.command_sender
+            .send(super::Command::FriendCommand(
+                FriendCommand::SearchUsername { username },
+            ))
+            .await
+            .expect("to send request");
     }
     pub async fn check_username_availability(&mut self, username: String) {
-        unimplemented!()
+        self.command_sender
+            .send(super::Command::FriendCommand(
+                FriendCommand::CheckUsernameAvailability { username },
+            ))
+            .await
+            .expect("to send request");
     }
     pub async fn change_username(&mut self, username: String) {
-        unimplemented!()
+        self.command_sender
+            .send(super::Command::FriendCommand(
+                FriendCommand::ChangeUsername { username },
+            ))
+            .await
+            .expect("to send request");
     }
     pub async fn load_friends(&mut self) {
-        unimplemented!()
+        self.command_sender
+            .send(super::Command::FriendCommand(FriendCommand::LoadFriends))
+            .await
+            .expect("to send request");
     }
     pub async fn load_pending_friend_requests(&mut self) {
-        unimplemented!()
+        self.command_sender
+            .send(super::Command::FriendCommand(
+                FriendCommand::LoadPendingFriendRequests,
+            ))
+            .await
+            .expect("to send request");
     }
     pub async fn load_incoming_friend_requests(&mut self) {
-        unimplemented!()
+        self.command_sender
+            .send(super::Command::FriendCommand(
+                FriendCommand::LoadIncomingFriendRequests,
+            ))
+            .await
+            .expect("to send request");
     }
 }
 
