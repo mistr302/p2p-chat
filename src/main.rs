@@ -77,6 +77,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .await
             .expect("Couldnt open sqlite connection"),
     );
+    // TODO: Make the hashmap for the ui_request_id -> network_request_id
+
     // let sqlite = tokio_rusqlite::Connection::open_in_memory()
     //     .await
     //     .expect("Couldnt open sqlite connection");
@@ -146,13 +148,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
     Ok(())
 }
+#[derive(Clone, Debug)]
+enum ReadEventError {
+    ReadError(String),
+    PostCardSerializeError(String),
+}
+impl Error for ReadEventError {}
+impl std::fmt::Display for ReadEventError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Hello world")
+    }
+}
+impl ReadEventError {
+    fn from_io_error(err: std::io::Error) -> Self {
+        Self::ReadError(err.to_string())
+    }
+}
 // TODO: instead of anyhow return a normal error
 async fn read_event(
     sock_read: &mut (impl AsyncReadExt + Unpin),
-) -> anyhow::Result<UiClientRequest> {
-    let bytes = sock_read.read_u64().await?;
+) -> Result<UiClientRequest, ReadEventError> {
+    let bytes = sock_read
+        .read_u64()
+        .await
+        .map_err(ReadEventError::from_io_error)?;
     let mut buf = vec![0u8; bytes as usize];
-    sock_read.read_exact(&mut buf).await?;
-    let event = postcard::from_bytes(&buf)?;
-    Ok(event)
+    sock_read
+        .read_exact(&mut buf)
+        .await
+        .map_err(ReadEventError::from_io_error)?;
+    let event = match postcard::from_bytes(&buf) {
+        Err(e) => Err(ReadEventError::PostCardSerializeError(e.to_string())),
+        Ok(event) => Ok(event),
+    };
+    Ok(event?)
 }
