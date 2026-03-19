@@ -1,10 +1,11 @@
 use base64::{Engine as _, engine::general_purpose};
+use dashmap::DashMap;
 use futures::StreamExt;
 use libp2p::{
     PeerId, StreamProtocol, Swarm,
-    identity::{Keypair},
+    identity::Keypair,
     mdns, noise,
-    request_response::{self, ProtocolSupport},
+    request_response::{self, OutboundRequestId, ProtocolSupport},
     swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux,
 };
@@ -16,7 +17,7 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio_rusqlite::{Connection, params};
 
 use crate::{
-    WriteEvent, db::types::{DiscoveryType, MessageStatus}, network::{
+    UiClientEventId, WriteEvent, db::types::{DiscoveryType, MessageStatus}, network::{
         chat::{
             ChatCommand, DirectMessageRequest, DirectMessageResponse, MessageResponse,
         },
@@ -40,6 +41,7 @@ pub(crate) async fn new(
     sqlite_conn: Arc<Connection>,
     settings: Arc<HashMap<SettingName, SettingValue>>,
     api_writer_tx: UnboundedSender<WriteEvent>,
+    request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>
 ) -> anyhow::Result<(EventLoop, Client)> {
     // TODO: Confiugre properly & handle errors
 
@@ -98,6 +100,7 @@ pub(crate) async fn new(
         command_sender: command_tx,
         keys: id.clone(),
         id: PeerId::from_public_key(&id.public()),
+        request_map 
     };
     let event_loop = EventLoop {
         swarm,
@@ -135,6 +138,7 @@ pub(crate) struct Client {
     settings: Arc<HashMap<SettingName, SettingValue>>,
     keys: Keypair,
     pub id: PeerId,
+    request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>
 }
 impl EventLoop {
     pub async fn run(mut self) {

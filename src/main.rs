@@ -4,7 +4,9 @@ mod settings;
 mod tui;
 use crate::settings::Settings;
 use crate::settings::{create_project_dirs, get_save_file_path};
+use dashmap::DashMap;
 use libp2p::PeerId;
+use libp2p::request_response::OutboundRequestId;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{error::Error, sync::Arc};
@@ -62,6 +64,7 @@ pub enum WriteEvent {
     MdnsNameChanged { peer_id: String, name: String },
     EventResponse(UiClientEventResponse),
 }
+pub struct UiClientEventId(Uuid);
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
@@ -75,7 +78,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .expect("Couldnt open sqlite connection"),
     );
     // TODO: Make the hashmap for the ui_request_id -> network_request_id
-
+    let request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>> = Arc::new(DashMap::new());
     // let sqlite = tokio_rusqlite::Connection::open_in_memory()
     //     .await
     //     .expect("Couldnt open sqlite connection");
@@ -92,8 +95,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (api_writer_tx, mut api_writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriteEvent>();
 
     let settings = Arc::new(settings);
-    let (event_loop, mut client) =
-        network::new(sqlite.clone(), settings.clone(), api_writer_tx.clone()).await?;
+    let (event_loop, mut client) = network::new(
+        sqlite.clone(),
+        settings.clone(),
+        api_writer_tx.clone(),
+        request_map.clone(),
+    )
+    .await?;
     let close_app = CancellationToken::new();
     tokio::spawn(event_loop.run());
     tokio::select! {
@@ -105,7 +113,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             match request.event {
                 UiClientEvent::Close => {
                     close_app.cancel();
-                    // TODO: make write response
                 }
                 UiClientEvent::SendMessage { peer_id, message } => {
                     client
