@@ -17,7 +17,7 @@ use tokio::sync::mpsc::{self, UnboundedSender};
 use tokio_rusqlite::{Connection, params};
 
 use crate::{
-    UiClientEventId, WriteEvent, db::types::{DiscoveryType, MessageStatus}, network::{
+    UiClientEventId, UiClientEventResponse, UiClientEventResponseType, WriteEvent, db::types::{DiscoveryType, MessageStatus}, network::{
         chat::{
             ChatCommand, DirectMessageRequest, DirectMessageResponse, MessageResponse,
         },
@@ -100,7 +100,7 @@ pub(crate) async fn new(
         command_sender: command_tx,
         keys: id.clone(),
         id: PeerId::from_public_key(&id.public()),
-        request_map 
+        request_map: request_map.clone()  //TODO: Maybe remove cuz not using it
     };
     let event_loop = EventLoop {
         swarm,
@@ -110,7 +110,8 @@ pub(crate) async fn new(
         api_writer_tx,
         sqlite_conn,
         client: client.clone(),
-        reqwest_client: reqwest::Client::new()
+        reqwest_client: reqwest::Client::new(),
+        request_map
     };
     Ok((event_loop, client))
 }
@@ -130,7 +131,8 @@ pub struct EventLoop {
     sqlite_conn: Arc<Connection>,
     api_writer_tx: UnboundedSender<WriteEvent>,
     client: Client,
-    reqwest_client: reqwest::Client
+    reqwest_client: reqwest::Client,
+    request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>
 }
 #[derive(Clone)]
 pub(crate) struct Client {
@@ -246,26 +248,29 @@ impl EventLoop {
                         };
                         self.api_writer_tx.send(WriteEvent::ReceiveMessage(message)).expect("to send");
                     }
-                    request_response::Message::Response { response, .. } => match response {
+                    request_response::Message::Response { response, request_id, .. } => match response {
                         DirectMessageResponse(MessageResponse::ACK { message_id }) => {
                             // TODO:
+                            let client_ev_id =  self.request_map.get(&request_id).expect("to exist");            
+                            self.api_writer_tx.send(crate::WriteEvent::EventResponse(crate::UiClientEventResponse { req_id: client_ev_id.0, result: Ok(UiClientEventResponseType::SendMessage)  })).expect("to send");
+                            
                         }
-                        DirectMessageResponse(MessageResponse::InvalidSignature { message_id }) => {
-                            // TODO:
-
-                        }
+                        // DirectMessageResponse(MessageResponse::InvalidSignature { message_id }) => {
+                        //     // TODO:
+                        //
+                        // }
                     },
                 }
             }
             SwarmEvent::Behaviour(BehaviourEvent::Friends(request_response::Event::Message {
                 peer,
-                connection_id,
                 message,
+                ..
             })) => match message {
                 request_response::Message::Request {
-                    request_id,
                     request,
                     channel,
+                    ..
                 } => match request {
                     FriendRequest::RequestName => {
                         let name = self.settings.get(&SettingName::Name);
@@ -287,6 +292,8 @@ impl EventLoop {
                             .expect("On Name request to be sent");
                     }
                     FriendRequest::AcceptFriend { decision } => {
+                        //TODO: add the friend decision to sqlite
+
                         self.swarm
                             .behaviour_mut()
                             .friends
@@ -296,18 +303,22 @@ impl EventLoop {
                             )
                             .expect("to send res");
                     }
-                    FriendRequest::AddFriend => self
+                    FriendRequest::AddFriend => { 
+                        //TODO: add the friend request to sqlite
+                        self
                         .swarm
                         .behaviour_mut()
                         .friends
                         .send_response(channel, FriendResponse::AddFriendAck)
-                        .expect("to send res"),
+                        .expect("to send res")
+                    },
                 },
 
                 request_response::Message::Response {
                     request_id,
                     response,
                 } => {
+                        let client_ev_id =  self.request_map.get(&request_id).expect("to exist");            
                         match response {
                             FriendResponse::RequestName { name } => {
                                 tracing::info!("Received valid name response");
@@ -325,8 +336,12 @@ impl EventLoop {
                                     Err(err) => tracing::info!("{err}")
                                 }
                             }
-                            FriendResponse::AddFriendAck => {}
-                            FriendResponse::AcceptFriendAck => {}
+                            FriendResponse::AddFriendAck => {
+                                self.api_writer_tx.send(WriteEvent::EventResponse(UiClientEventResponse { req_id: client_ev_id.0, result: Ok(UiClientEventResponseType::SendFriendRequest) })).expect("to send");
+                            }
+                            FriendResponse::AcceptFriendAck => {
+                                self.api_writer_tx.send(WriteEvent::EventResponse(UiClientEventResponse { req_id: client_ev_id.0, result: Ok(UiClientEventResponseType::AcceptFriendRequest) })).expect("to send");
+                            }
                         }
                 }
             },

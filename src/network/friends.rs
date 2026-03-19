@@ -62,22 +62,28 @@ impl EventLoop {
         // Send re-render of contact list to tui
         match command {
             FriendCommand::RequestName { peer } => {
+                // TODO: this is not a ui client event
                 self.swarm
                     .behaviour_mut()
                     .friends
                     .send_request(&peer, FriendRequest::RequestName);
             }
             FriendCommand::AddFriend { peer } => {
-                self.swarm
+                let id = self
+                    .swarm
                     .behaviour_mut()
                     .friends
                     .send_request(&peer, FriendRequest::AddFriend);
+                self.request_map.insert(id, crate::UiClientEventId(req_id));
+                // the event is written in swarm
             }
             FriendCommand::AcceptFriend { peer, decision } => {
-                self.swarm
+                let id = self
+                    .swarm
                     .behaviour_mut()
                     .friends
                     .send_request(&peer, FriendRequest::AcceptFriend { decision });
+                self.request_map.insert(id, crate::UiClientEventId(req_id));
             }
             FriendCommand::SearchPeer { id } => {
                 let url = format!("http://{}/find-by-id?q={}", HTTP_TRACKER, id);

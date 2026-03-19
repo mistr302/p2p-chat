@@ -1,5 +1,4 @@
 use crate::db::sql_calls::get_message_log;
-use crate::network::signable::{Signed, sign};
 use crate::network::{Client, EventLoop};
 use crate::network::{Command, CommandType};
 use libp2p::PeerId;
@@ -19,7 +18,8 @@ pub struct Message {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum MessageResponse {
     ACK { message_id: Uuid },
-    InvalidSignature { message_id: Uuid },
+    // InvalidSignature { message_id: Uuid },
+    // TODO: maybe smth like not friends
 }
 pub enum ChatCommand {
     SendMessage { receiver: PeerId, message: Message },
@@ -34,6 +34,7 @@ impl EventLoop {
                     .behaviour_mut()
                     .direct_message
                     .send_request(&receiver, DirectMessageRequest(message));
+                self.request_map.insert(id, crate::UiClientEventId(req_id));
             }
             ChatCommand::LoadChatLog { from_peer_id, page } => {
                 let res = self
