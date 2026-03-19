@@ -159,7 +159,10 @@ enum ReadEventError {
 impl Error for ReadEventError {}
 impl std::fmt::Display for ReadEventError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Hello world")
+        match self {
+            Self::ReadError(s) => write!(f, "Error reading event: {}", s),
+            Self::PostCardSerializeError(s) => write!(f, "Error while deserializing data: {}", s),
+        }
     }
 }
 impl ReadEventError {
