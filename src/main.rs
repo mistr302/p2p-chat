@@ -1,7 +1,6 @@
 mod db;
 mod network;
 mod settings;
-mod setup_tui;
 mod tui;
 use crate::settings::Settings;
 use crate::settings::{create_project_dirs, get_save_file_path};
@@ -10,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{error::Error, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 #[derive(Deserialize, Serialize, Clone)]
 struct UiClientRequest {
@@ -30,6 +30,7 @@ enum UiClientEvent {
     LoadFriends,
     LoadPendingFriendRequests,
     LoadIncomingFriendRequests,
+    Close,
 }
 #[derive(Deserialize, Serialize)]
 pub enum UiClientEventResponseError {}
@@ -67,11 +68,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .with_writer(std::io::stderr)
         .init();
     create_project_dirs().unwrap();
-    let mut args = std::env::args().skip(1);
-    if matches!(args.next().as_deref(), Some("setup")) {
-        setup_tui::run_setup()?;
-        return Ok(());
-    }
+
     let sqlite = Arc::new(
         tokio_rusqlite::Connection::open(get_save_file_path(settings::SaveFile::Database))
             .await
@@ -97,13 +94,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let settings = Arc::new(settings);
     let (event_loop, mut client) =
         network::new(sqlite.clone(), settings.clone(), api_writer_tx.clone()).await?;
-    // let token = CancellationToken::new();
-    // let child_token = token.child_token();
+    let close_app = CancellationToken::new();
     tokio::spawn(event_loop.run());
     tokio::select! {
+        _ = close_app.cancelled() => {
+            return Ok(());
+        }
         req = read_event(&mut sock_read) => {
             let request = req.clone()?;
             match request.event {
+                UiClientEvent::Close => {
+                    close_app.cancel();
+                    // TODO: make write response
+                }
                 UiClientEvent::SendMessage { peer_id, message } => {
                     client
                         .send_message(PeerId::from_str(&peer_id).unwrap(), message, req?.req_id)
@@ -164,7 +167,6 @@ impl ReadEventError {
         Self::ReadError(err.to_string())
     }
 }
-// TODO: instead of anyhow return a normal error
 async fn read_event(
     sock_read: &mut (impl AsyncReadExt + Unpin),
 ) -> Result<UiClientRequest, ReadEventError> {
@@ -177,9 +179,8 @@ async fn read_event(
         .read_exact(&mut buf)
         .await
         .map_err(ReadEventError::from_io_error)?;
-    let event = match postcard::from_bytes(&buf) {
+    match postcard::from_bytes(&buf) {
         Err(e) => Err(ReadEventError::PostCardSerializeError(e.to_string())),
         Ok(event) => Ok(event),
-    };
-    Ok(event?)
+    }
 }
