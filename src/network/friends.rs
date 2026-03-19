@@ -10,14 +10,12 @@ use crate::{
 #[derive(Debug, Serialize, Deserialize)]
 pub enum FriendRequest {
     RequestName,
-    VerifyName { name: String },
     AddFriend,
     AcceptFriend { decision: bool },
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum FriendResponse {
     RequestName { name: String },
-    VerifyName(Option<String>),
     AddFriendAck,
     AcceptFriendAck,
 }
@@ -432,7 +430,7 @@ impl Client {
     }
 }
 
-// Name exchange -- Will occur when there is no name linked to PubKey
+// Name exchange -- Will occur when there is no name linked to PeerId
 // What is your name?
 // My name is: xxxx
 // acknowledged

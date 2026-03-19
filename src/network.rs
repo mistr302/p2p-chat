@@ -26,7 +26,7 @@ use crate::{
 pub mod chat;
 pub mod friends;
 pub mod signable;
-
+pub static REQUEST_TIMEOUT_SECS: u8 = 5;
 pub static HTTP_TRACKER: &str = "localhost:8000";
 pub enum CommandType {
     ChatCommand(ChatCommand),
@@ -282,26 +282,6 @@ impl EventLoop {
                             )
                             .expect("On Name request to be sent");
                     }
-                    FriendRequest::VerifyName { name } => {
-                        let SettingValue::String(Some(curr_name)) = self
-                            .settings
-                            .get(&SettingName::Name)
-                            .expect("name opt to exist")
-                        else {
-                            unimplemented!("");
-                        };
-                        self.swarm
-                            .behaviour_mut()
-                            .friends
-                            .send_response(
-                                channel,
-                                    FriendResponse::VerifyName(match name == *curr_name {
-                                        true => None,
-                                        false => Some(curr_name.clone()),
-                                    }),
-                            )
-                            .expect("to send res");
-                    }
                     FriendRequest::AcceptFriend { decision } => {
                         self.swarm
                             .behaviour_mut()
@@ -341,7 +321,6 @@ impl EventLoop {
                                     Err(err) => tracing::info!("{err}")
                                 }
                             }
-                            FriendResponse::VerifyName(name) => {}
                             FriendResponse::AddFriendAck => {}
                             FriendResponse::AcceptFriendAck => {}
                         }
