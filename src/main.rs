@@ -6,7 +6,7 @@ use crate::settings::Settings;
 use crate::settings::{create_project_dirs, get_save_file_path};
 use dashmap::DashMap;
 use libp2p::PeerId;
-use libp2p::request_response::OutboundRequestId;
+use libp2p::request_response::{OutboundFailure, OutboundRequestId};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{error::Error, sync::Arc};

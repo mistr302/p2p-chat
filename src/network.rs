@@ -27,6 +27,7 @@ use crate::{
 pub mod chat;
 pub mod friends;
 pub mod signable;
+pub mod types;
 pub static REQUEST_TIMEOUT_SECS: u8 = 5;
 pub static HTTP_TRACKER: &str = "localhost:8000";
 pub enum CommandType {
@@ -234,9 +235,7 @@ impl EventLoop {
                             .direct_message
                             .send_response(
                                 channel,
-                                DirectMessageResponse(MessageResponse::ACK {
-                                    message_id: message.id,
-                                }),
+                                DirectMessageResponse(MessageResponse::ACK),
                             )
                             .expect("to be sent");
                         // TODO: Send to ui through the api
@@ -249,7 +248,7 @@ impl EventLoop {
                         self.api_writer_tx.send(WriteEvent::ReceiveMessage(message)).expect("to send");
                     }
                     request_response::Message::Response { response, request_id, .. } => match response {
-                        DirectMessageResponse(MessageResponse::ACK { message_id }) => {
+                        DirectMessageResponse(MessageResponse::ACK) => {
                             // TODO:
                             let client_ev_id =  self.request_map.get(&request_id).expect("to exist");            
                             self.api_writer_tx.send(crate::WriteEvent::EventResponse(crate::UiClientEventResponse { req_id: client_ev_id.0, result: Ok(UiClientEventResponseType::SendMessage)  })).expect("to send");
@@ -345,6 +344,33 @@ impl EventLoop {
                         }
                 }
             },
+            SwarmEvent::Behaviour(BehaviourEvent::Friends(request_response::Event::OutboundFailure {
+                peer,
+                request_id,
+                error,
+                ..
+            })) => {
+
+            },
+            SwarmEvent::Behaviour(BehaviourEvent::Friends(request_response::Event::InboundFailure {
+                peer,
+                request_id,
+                error,
+                ..
+            })) => {
+
+            },
+
+            SwarmEvent::Behaviour(BehaviourEvent::DirectMessage(request_response::Event::OutboundFailure {
+                peer,
+                request_id,
+                error,
+                ..
+            })) => {
+
+            }
+
+
             _ => {}
         }
     }

@@ -17,7 +17,7 @@ pub struct Message {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum MessageResponse {
-    ACK { message_id: Uuid },
+    ACK,
     // InvalidSignature { message_id: Uuid },
     // TODO: maybe smth like not friends
 }
