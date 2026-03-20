@@ -1,5 +1,5 @@
 [package]
-name = "p2pchat"
+name = "p2pchat_core"
 version = "0.1.0"
 edition = "2024"
 
