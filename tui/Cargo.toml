@@ -4,4 +4,4 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-p2pchat_core = { path = "../p2p-chat-core" }
+p2pchat-types = { path = "../p2pchat-types" }

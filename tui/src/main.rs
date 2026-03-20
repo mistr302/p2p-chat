@@ -1,4 +1,4 @@
-// use p2p_chat_core::tui::types;
+use p2pchat_types::{Contact, Message, MessageStatus};
 fn main() {
     println!("Hello, world!");
 }

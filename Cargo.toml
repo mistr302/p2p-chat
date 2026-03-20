@@ -1,2 +1,2 @@
 [workspace]
-members = ["p2pchat_core", "tui"]
+members = ["p2pchat-core", "tui"]
