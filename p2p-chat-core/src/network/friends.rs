@@ -127,6 +127,8 @@ impl EventLoop {
                     Ok(response) => {
                         if response.status().is_success() {
                             match response.json::<PeerSearchResponse>().await {
+                                // TODO: create a contact and add to sqlite
+                                // maybe add ttl to names and try to fetch from local db first?
                                 Ok(result) => {
                                     self.api_writer_tx
                                         .send(crate::WriteEvent::EventResponse(
