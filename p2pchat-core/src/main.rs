@@ -96,8 +96,14 @@ pub struct RelayServerConnectionEvent(Result<RelayConnectionSuccess, RelayConnec
 
 pub struct DcutrConnectionEvent(Result<DcutrConnectionSuccess, DcutrConnectionError>); // THIS CUZ
 // ITS KINDA COOL TO KNOW XD
+
+#[derive(Deserialize, Serialize)]
+pub enum CriticalFailure {
+    FailedToLoadSettings,
+}
 #[derive(Deserialize, Serialize)]
 pub enum WriteEvent {
+    CriticalFailure(CriticalFailure),
     ReceiveMessage(tui::types::Message),
     ReceiveFriendRequest,
     DiscoverMdnsContact {
@@ -143,11 +149,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     db::migrate_db::migrate(&sqlite).await?;
 
-    // TODO: Write an error to sock if failed to load settings and close the app
-    let settings = Settings::load()?;
+    let settings = match Settings::load() {
+        Err(e) => {
+            write_event(
+                &mut sock_write,
+                Some(WriteEvent::CriticalFailure(
+                    CriticalFailure::FailedToLoadSettings,
+                )),
+            )
+            .await?;
+            drop(listener);
+            panic!()
+        }
+        Ok(s) => s,
+    };
     let (api_writer_tx, mut api_writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriteEvent>();
 
-    // TODO: Make the hashmap for the ui_request_id -> network_request_id
     let request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>> = Arc::new(DashMap::new());
 
     let settings = Arc::new(settings);
@@ -230,12 +247,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         event = api_writer_rx.recv() => {
-            if let Some(write_event) = event {
-                let serialized = postcard::to_allocvec(&write_event)?;
-                sock_write.write_u64(serialized.len() as u64).await?;
-                sock_write.write_all(&serialized).await?;
-            }
+            // TODO: handle error so it doesnt crash the app xd
+            write_event(&mut sock_write, event).await?;
         }
+    }
+    Ok(())
+}
+async fn write_event(
+    sock_write: &mut (impl AsyncWriteExt + Unpin),
+    event: Option<WriteEvent>,
+) -> anyhow::Result<()> {
+    if let Some(write_event) = event {
+        let serialized = postcard::to_allocvec(&write_event)?;
+        sock_write.write_u64(serialized.len() as u64).await?;
+        sock_write.write_all(&serialized).await?;
     }
     Ok(())
 }
