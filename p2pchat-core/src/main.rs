@@ -148,7 +148,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (mut sock_read, mut sock_write) = _sock.0.split();
 
     db::migrate_db::migrate(&sqlite).await?;
-
+    // TODO: handle better xd
     let settings = match Settings::load() {
         Err(e) => {
             write_event(
