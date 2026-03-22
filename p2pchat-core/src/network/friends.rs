@@ -69,6 +69,8 @@ impl EventLoop {
                     .send_request(&peer, FriendRequest::RequestName);
             }
             FriendCommand::AddFriend { peer } => {
+                // TODO: Add to sqlite as pending
+
                 let id = self
                     .swarm
                     .behaviour_mut()
@@ -78,6 +80,7 @@ impl EventLoop {
                 // the event is written in swarm
             }
             FriendCommand::AcceptFriend { peer, decision } => {
+                // TODO: Add our decision to sqlite
                 let id = self
                     .swarm
                     .behaviour_mut()

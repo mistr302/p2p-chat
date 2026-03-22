@@ -1,48 +1,67 @@
 use base64::{Engine as _, engine::general_purpose};
 use dashmap::DashMap;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt, executor::block_on};
 use libp2p::{
-    PeerId, StreamProtocol, Swarm,
+    Multiaddr, PeerId, StreamProtocol, Swarm, dcutr,
     identity::Keypair,
     mdns, noise,
     request_response::{self, OutboundRequestId, ProtocolSupport},
-    swarm::{NetworkBehaviour, SwarmEvent},
+    swarm::{ConnectionId, NetworkBehaviour, SwarmEvent},
     tcp, yamux,
 };
 use num_enum::TryFromPrimitive;
-use uuid::Uuid;
-use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::mpsc::{self, UnboundedSender};
+use std::{collections::HashMap, str::FromStr};
+use tokio::sync::{
+    Mutex,
+    mpsc::{self, UnboundedSender},
+    oneshot,
+};
 use tokio_rusqlite::{Connection, params};
+use uuid::Uuid;
 
 use crate::{
-    UiClientEventId, UiClientEventResponse, UiClientEventResponseType, WriteEvent, db::types::{DiscoveryType, MessageStatus}, network::{
-        chat::{
-            ChatCommand, DirectMessageRequest, DirectMessageResponse, MessageResponse,
-        },
+    DcutrConnectionSuccess, UiClientEventId, UiClientEventResponse, UiClientEventResponseType,
+    WriteEvent,
+    db::{
+        sql_calls::insert_message,
+        types::{DiscoveryType, MessageStatus},
+    },
+    network::{
+        chat::{ChatCommand, DirectMessageRequest, DirectMessageResponse, MessageResponse},
         friends::{FriendCommand, FriendRequest, FriendResponse},
-    }, settings::{SettingName, SettingValue}, tui::types::Contact
+    },
+    settings::{SettingName, SettingValue},
+    tui::types::Contact,
 };
 pub mod chat;
 pub mod friends;
 pub mod signable;
 pub mod types;
-pub static REQUEST_TIMEOUT_SECS: u8 = 5;
+// TODO: !IMPORTANT! Add the relay addr
+pub static RELAY_ADDR: &str = "";
+// TODO: !IMPORTANT! Add the http addr
 pub static HTTP_TRACKER: &str = "localhost:8000";
 pub enum CommandType {
     ChatCommand(ChatCommand),
     FriendCommand(FriendCommand),
+    Dial {
+        peer_id: PeerId,
+    },
+    IsPeerConnected {
+        sender: oneshot::Sender<bool>,
+        peer_id: PeerId,
+    },
 }
 pub struct Command {
     id: Uuid,
-    cmd_type: CommandType
+    cmd_type: CommandType,
 }
 pub(crate) async fn new(
     sqlite_conn: Arc<Connection>,
     settings: Arc<HashMap<SettingName, SettingValue>>,
     api_writer_tx: UnboundedSender<WriteEvent>,
-    request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>
+    request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>,
 ) -> anyhow::Result<(EventLoop, Client)> {
     // TODO: Confiugre properly & handle errors
 
@@ -69,7 +88,8 @@ pub(crate) async fn new(
             yamux::Config::default,
         )?
         .with_quic()
-        .with_behaviour(|key| {
+        .with_relay_client(noise::Config::new, yamux::Config::default)?
+        .with_behaviour(|key, relay_client| {
             let mdns =
                 mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?;
             let direct_message = libp2p::request_response::cbor::Behaviour::new(
@@ -83,25 +103,80 @@ pub(crate) async fn new(
                 [(StreamProtocol::new("/friends/1"), ProtocolSupport::Full)],
                 request_response::Config::default(),
             );
+            let identify = libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
+                "/p2pchat/1.0.0".to_string(),
+                key.public(),
+            ));
+            let dcutr = libp2p::dcutr::Behaviour::new(key.public().to_peer_id());
             Ok(Behaviour {
+                relay_client,
+                identify,
+                dcutr,
                 mdns,
                 direct_message,
                 friends,
             })
         })?
         .build();
+
     // Listen on all interfaces and whatever port the OS assigns
-    swarm
-        .listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
-    swarm
-        .listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+    swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
+    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+
+    // Wait to listen on all interfaces.
+    block_on(async {
+        let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
+        loop {
+            futures::select! {
+                event = swarm.next() => {
+                    match event.unwrap() {
+                        SwarmEvent::NewListenAddr { address, .. } => {
+                            tracing::info!(%address, "Listening on address");
+                        }
+                        // TODO: I dont want it to panic just because i caught another event,
+                        // implement a vector to store the events and handle them after running the
+                        // event loop
+                        event => panic!("{event:?}"),
+                    }
+                }
+                _ = delay => {
+                    // Likely listening on all interfaces now, thus continuing by breaking the loop.
+                    break;
+                }
+            }
+        }
+    });
+
+    // dial relay
+    let mut relay_connections = Vec::new();
+    let relay_addr = Multiaddr::from_str(RELAY_ADDR)?;
+    let res = swarm.dial(relay_addr.clone());
+    match res {
+        Ok(_) => {
+            // Step 2: after connection, request a reservation (circuit relay listen)
+            let relay_reservation_addr = relay_addr
+                .clone()
+                .with(libp2p::multiaddr::Protocol::P2pCircuit); // appends /p2p-circuit
+            swarm.listen_on(relay_reservation_addr)?; // TODO: handle this error
+            relay_connections.push(relay_addr);
+        }
+        Err(e) => {
+            tracing::error!("Failed to dial relay: {e}");
+            api_writer_tx
+                .send(WriteEvent::RelayServerConnection(
+                    crate::RelayServerConnectionEvent(Err(crate::RelayConnectionError::DialError)),
+                ))
+                .expect("to send");
+        }
+    }
+
     let (command_tx, command_rx) = mpsc::channel(100);
     let client = Client {
         settings: settings.clone(),
         command_sender: command_tx,
         keys: id.clone(),
         id: PeerId::from_public_key(&id.public()),
-        request_map: request_map.clone()  //TODO: Maybe remove cuz not using it
+        request_map: request_map.clone(), //TODO: Maybe remove cuz not using it
     };
     let event_loop = EventLoop {
         swarm,
@@ -112,7 +187,9 @@ pub(crate) async fn new(
         sqlite_conn,
         client: client.clone(),
         reqwest_client: reqwest::Client::new(),
-        request_map
+        request_map,
+        relay_connections: Arc::new(Mutex::new(relay_connections)),
+        request_buffer: Mutex::new(HashMap::new()),
     };
     Ok((event_loop, client))
 }
@@ -121,8 +198,10 @@ struct Behaviour {
     mdns: mdns::tokio::Behaviour,
     direct_message:
         libp2p::request_response::cbor::Behaviour<DirectMessageRequest, DirectMessageResponse>,
-    friends:
-        libp2p::request_response::cbor::Behaviour<FriendRequest, FriendResponse>,
+    friends: libp2p::request_response::cbor::Behaviour<FriendRequest, FriendResponse>,
+    relay_client: libp2p::relay::client::Behaviour,
+    identify: libp2p::identify::Behaviour,
+    dcutr: libp2p::dcutr::Behaviour,
 }
 pub struct EventLoop {
     swarm: Swarm<Behaviour>,
@@ -133,7 +212,9 @@ pub struct EventLoop {
     api_writer_tx: UnboundedSender<WriteEvent>,
     client: Client,
     reqwest_client: reqwest::Client,
-    request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>
+    request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>,
+    relay_connections: Arc<Mutex<Vec<Multiaddr>>>,
+    request_buffer: Mutex<HashMap<PeerId, Vec<Command>>>,
 }
 #[derive(Clone)]
 pub(crate) struct Client {
@@ -141,7 +222,31 @@ pub(crate) struct Client {
     settings: Arc<HashMap<SettingName, SettingValue>>,
     keys: Keypair,
     pub id: PeerId,
-    request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>
+    request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>,
+}
+impl Client {
+    pub async fn dial(&self, peer_id: PeerId, req_id: Uuid) {
+        self.command_sender
+            .send(Command {
+                id: req_id,
+                cmd_type: CommandType::Dial { peer_id },
+            })
+            .await
+            .expect("to send");
+    }
+    pub async fn is_connected(
+        &mut self,
+        peer_id: PeerId,
+        sender: tokio::sync::oneshot::Sender<bool>,
+    ) {
+        self.command_sender
+            .send(Command {
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::IsPeerConnected { sender, peer_id },
+            })
+            .await
+            .expect("to send");
+    }
 }
 impl EventLoop {
     pub async fn run(mut self) {
@@ -152,8 +257,30 @@ impl EventLoop {
                     match command.cmd_type {
                         CommandType::ChatCommand(chat) => self.handle_chat_command(chat, command.id).await,
                         CommandType::FriendCommand(friend) => self.handle_friend_command(friend, command.id).await,
+                        CommandType::Dial { peer_id } => self.dial_peer(peer_id).await,
+                        CommandType::IsPeerConnected { sender, peer_id } => {
+                            let res = self.swarm.is_connected(&peer_id);
+                            sender.send(res).expect("to send");
+                        }
                     }
                 },
+            }
+        }
+    }
+    async fn dial_peer(&mut self, peer_id: PeerId) {
+        for conn in self.relay_connections.lock().await.iter() {
+            // TODO: this could be a bit too much to dial every relay just for one
+            // connection, use dht after
+            match self.swarm.dial(
+                conn.clone()
+                    .with(libp2p::multiaddr::Protocol::P2pCircuit)
+                    .with_p2p(peer_id)
+                    .unwrap(),
+            ) {
+                Ok(_) => break, // TODO: this may be bs
+                Err(e) => {
+                    tracing::error!("failed to dial peer on relay: {conn}");
+                }
             }
         }
     }
@@ -163,7 +290,7 @@ impl EventLoop {
                 let mut known = Vec::<PeerId>::new();
                 for (peer_id, _multiaddr) in list {
                     tracing::info!("{peer_id} peer connected!");
-                    // Maybe dial and get locally set name
+                    // TODO: implement known as a map
                     if !known.contains(&peer_id) {
                         known.push(peer_id);
                         // TODO: Handle uniqueness maybe select the peer_id first from sqlite and
@@ -184,7 +311,6 @@ impl EventLoop {
                         match res {
                             Ok(_) => self.client.request_name(peer_id).await,
                             Err(e) => tracing::info!("{e}"),
- 
                         }
                         // TODO: Send the mdns record
                     }
@@ -192,12 +318,38 @@ impl EventLoop {
             }
             SwarmEvent::Behaviour(BehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
                 for (peer_id, _multiaddr) in list {
+                    self.api_writer_tx
+                        .send(WriteEvent::MdnsPeerDisconnected {
+                            peer_id: peer_id.to_string(),
+                        })
+                        .expect("receiver not to be dropped");
                     tracing::info!("{peer_id} expired mDNS");
                 }
             }
             SwarmEvent::NewListenAddr { address, .. } => {
                 tracing::info!("Local node is listening on {address}");
             }
+            SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                // TODO:
+            }
+            SwarmEvent::Behaviour(BehaviourEvent::Dcutr(ev)) => {
+                // TODO: add connection_id if libp2p allows it to be public someday
+                if ev.result.is_ok() {
+                    self.api_writer_tx
+                        .send(WriteEvent::DcutrConnection(crate::DcutrConnectionEvent(
+                            Ok(DcutrConnectionSuccess {
+                                peer_id: ev.remote_peer_id.to_string(),
+                            }),
+                        )))
+                        .expect("to send");
+                }
+            }
+            SwarmEvent::Behaviour(BehaviourEvent::RelayClient(ev)) => match ev {
+                libp2p::relay::client::Event::ReservationReqAccepted { relay_peer_id, .. } => {
+                    // TODO: figure ts out
+                }
+                _ => {}
+            },
             SwarmEvent::Behaviour(BehaviourEvent::DirectMessage(
                 request_response::Event::Message { message, peer, .. },
             )) => {
@@ -216,7 +368,7 @@ impl EventLoop {
                             })
                             .await.unwrap();
 
-                        let contact = self.sqlite_conn 
+                        let contact = self.sqlite_conn
                             .call(move |c| {
                                 let mut stmt = c.prepare("SELECT name, discovery_type FROM contacts WHERE peer_id LIKE ?1")?;
                                 stmt.query_one([peer_id.to_string()], |r| {
@@ -233,32 +385,40 @@ impl EventLoop {
                         self.swarm
                             .behaviour_mut()
                             .direct_message
-                            .send_response(
-                                channel,
-                                DirectMessageResponse(MessageResponse::ACK),
-                            )
+                            .send_response(channel, DirectMessageResponse(MessageResponse::Ack))
                             .expect("to be sent");
                         // TODO: Send to ui through the api
-                        let message = crate::tui::types::Message{
+                        let message = crate::tui::types::Message {
                             content: message.content,
                             id: message.id,
                             sender: contact,
                             status: crate::db::types::MessageStatus::ReceivedNotRead,
                         };
-                        self.api_writer_tx.send(WriteEvent::ReceiveMessage(message)).expect("to send");
+                        self.api_writer_tx
+                            .send(WriteEvent::ReceiveMessage(message))
+                            .expect("to send");
                     }
-                    request_response::Message::Response { response, request_id, .. } => match response {
-                        DirectMessageResponse(MessageResponse::ACK) => {
-                            // TODO:
-                            let client_ev_id =  self.request_map.get(&request_id).expect("to exist");            
-                            self.api_writer_tx.send(crate::WriteEvent::EventResponse(crate::UiClientEventResponse { req_id: client_ev_id.0, result: Ok(UiClientEventResponseType::SendMessage)  })).expect("to send");
-                            
+                    request_response::Message::Response {
+                        response,
+                        request_id,
+                        ..
+                    } => {
+                        let client_ev_id = self.request_map.get(&request_id).expect("to exist");
+                        match response {
+                            DirectMessageResponse(MessageResponse::Ack) => {
+                                // TODO:
+                                self.api_writer_tx
+                                    .send(crate::WriteEvent::EventResponse(
+                                        crate::UiClientEventResponse {
+                                            req_id: client_ev_id.0,
+                                            result: Ok(UiClientEventResponseType::SendMessage),
+                                        },
+                                    ))
+                                    .expect("to send");
+                            }
+                            DirectMessageResponse(MessageResponse::DeniedNotFriends) => {}
                         }
-                        // DirectMessageResponse(MessageResponse::InvalidSignature { message_id }) => {
-                        //     // TODO:
-                        //
-                        // }
-                    },
+                    }
                 }
             }
             SwarmEvent::Behaviour(BehaviourEvent::Friends(request_response::Event::Message {
@@ -267,9 +427,7 @@ impl EventLoop {
                 ..
             })) => match message {
                 request_response::Message::Request {
-                    request,
-                    channel,
-                    ..
+                    request, channel, ..
                 } => match request {
                     FriendRequest::RequestName => {
                         let name = self.settings.get(&SettingName::Name);
@@ -278,15 +436,14 @@ impl EventLoop {
                             .friends
                             .send_response(
                                 channel,
-                                    FriendResponse::RequestName {
-                                        name: match name.unwrap() {
-                                            SettingValue::String(val) => {
-                                                val.clone().unwrap_or("Anonymous".to_string())
-                                            }
-                                            _ => unimplemented!("undefined behaviour"),
-                                        },
+                                FriendResponse::RequestName {
+                                    name: match name.unwrap() {
+                                        SettingValue::String(val) => {
+                                            val.clone().unwrap_or("Anonymous".to_string())
+                                        }
+                                        _ => unimplemented!("undefined behaviour"),
                                     },
-                             
+                                },
                             )
                             .expect("On Name request to be sent");
                     }
@@ -296,80 +453,91 @@ impl EventLoop {
                         self.swarm
                             .behaviour_mut()
                             .friends
-                            .send_response(
-                                channel,
-                                FriendResponse::AcceptFriendAck,
-                            )
+                            .send_response(channel, FriendResponse::AcceptFriendAck)
                             .expect("to send res");
                     }
-                    FriendRequest::AddFriend => { 
+                    FriendRequest::AddFriend => {
                         //TODO: add the friend request to sqlite
-                        self
-                        .swarm
-                        .behaviour_mut()
-                        .friends
-                        .send_response(channel, FriendResponse::AddFriendAck)
-                        .expect("to send res")
-                    },
+                        self.swarm
+                            .behaviour_mut()
+                            .friends
+                            .send_response(channel, FriendResponse::AddFriendAck)
+                            .expect("to send res")
+                    }
                 },
 
                 request_response::Message::Response {
                     request_id,
                     response,
                 } => {
-                        let client_ev_id =  self.request_map.get(&request_id).expect("to exist");            
-                        match response {
-                            FriendResponse::RequestName { name } => {
-                                tracing::info!("Received valid name response");
-                                let n = name.clone();
-                                let res = self.sqlite_conn
-                                    .call(move |c| {
-                                        let mut stmt = c.prepare(
-                                            "UPDATE contacts SET name=? WHERE peer_id = ?",
-                                        )?;
-                                        stmt.execute(params![name, peer.to_string()])
+                    let client_ev_id = self.request_map.get(&request_id).expect("to exist");
+                    match response {
+                        FriendResponse::RequestName { name } => {
+                            tracing::info!("Received valid name response");
+                            let n = name.clone();
+                            let res = self
+                                .sqlite_conn
+                                .call(move |c| {
+                                    let mut stmt =
+                                        c.prepare("UPDATE contacts SET name=? WHERE peer_id = ?")?;
+                                    stmt.execute(params![name, peer.to_string()])
+                                })
+                                .await;
+                            match res {
+                                Ok(_) => self
+                                    .api_writer_tx
+                                    .send(WriteEvent::MdnsNameResolved {
+                                        peer_id: peer.to_string(),
+                                        name: n,
                                     })
-                                    .await;
-                                match res {
-                                    Ok(_) => self.api_writer_tx.send(WriteEvent::MdnsNameChanged { peer_id: peer.to_string(), name: n }).expect("to send"),
-                                    Err(err) => tracing::info!("{err}")
-                                }
-                            }
-                            FriendResponse::AddFriendAck => {
-                                self.api_writer_tx.send(WriteEvent::EventResponse(UiClientEventResponse { req_id: client_ev_id.0, result: Ok(UiClientEventResponseType::SendFriendRequest) })).expect("to send");
-                            }
-                            FriendResponse::AcceptFriendAck => {
-                                self.api_writer_tx.send(WriteEvent::EventResponse(UiClientEventResponse { req_id: client_ev_id.0, result: Ok(UiClientEventResponseType::AcceptFriendRequest) })).expect("to send");
+                                    .expect("to send"),
+                                Err(err) => tracing::info!("{err}"),
                             }
                         }
+                        FriendResponse::AddFriendAck => {
+                            self.api_writer_tx
+                                .send(WriteEvent::EventResponse(UiClientEventResponse {
+                                    req_id: client_ev_id.0,
+                                    result: Ok(UiClientEventResponseType::SendFriendRequest),
+                                }))
+                                .expect("to send");
+                        }
+                        FriendResponse::AcceptFriendAck => {
+                            self.api_writer_tx
+                                .send(WriteEvent::EventResponse(UiClientEventResponse {
+                                    req_id: client_ev_id.0,
+                                    result: Ok(UiClientEventResponseType::AcceptFriendRequest),
+                                }))
+                                .expect("to send");
+                        }
+                    }
                 }
             },
-            SwarmEvent::Behaviour(BehaviourEvent::Friends(request_response::Event::OutboundFailure {
-                peer,
-                request_id,
-                error,
-                ..
-            })) => {
+            SwarmEvent::Behaviour(BehaviourEvent::Friends(
+                request_response::Event::OutboundFailure {
+                    peer,
+                    request_id,
+                    error,
+                    ..
+                },
+            )) => {}
+            SwarmEvent::Behaviour(BehaviourEvent::Friends(
+                request_response::Event::InboundFailure {
+                    peer,
+                    request_id,
+                    error,
+                    ..
+                },
+            )) => {}
 
-            },
-            SwarmEvent::Behaviour(BehaviourEvent::Friends(request_response::Event::InboundFailure {
-                peer,
-                request_id,
-                error,
-                ..
-            })) => {
-
-            },
-
-            SwarmEvent::Behaviour(BehaviourEvent::DirectMessage(request_response::Event::OutboundFailure {
-                peer,
-                request_id,
-                error,
-                ..
-            })) => {
-
-            }
-
+            SwarmEvent::Behaviour(BehaviourEvent::DirectMessage(
+                request_response::Event::OutboundFailure {
+                    peer,
+                    request_id,
+                    error,
+                    ..
+                },
+            )) => {}
 
             _ => {}
         }

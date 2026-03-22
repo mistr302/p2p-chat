@@ -6,7 +6,7 @@ use crate::settings::Settings;
 use crate::settings::{create_project_dirs, get_save_file_path};
 use dashmap::DashMap;
 use libp2p::PeerId;
-use libp2p::request_response::{OutboundFailure, OutboundRequestId};
+use libp2p::request_response::OutboundRequestId;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use std::{error::Error, sync::Arc};
@@ -19,11 +19,21 @@ struct UiClientRequest {
     event: UiClientEvent,
 }
 #[derive(Deserialize, Serialize, Clone)]
-enum UiClientEvent {
+struct UiClientEventRequiringDial {
+    peer_id: String,
+    event: UiClientEventRequiringDialMessage,
+}
+#[derive(Deserialize, Serialize, Clone)]
+enum UiClientEventRequiringDialMessage {
     SendMessage { peer_id: String, message: String },
     SendFriendRequest { peer_id: String },
     AcceptFriendRequest { peer_id: String },
     DenyFriendRequest { peer_id: String },
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+enum UiClientEvent {
+    EventRequiringDial(UiClientEventRequiringDial),
     SearchUsername { username: String },
     SearchPeer { peer_id: String },
     CheckUsernameAvailability { username: String },
@@ -32,10 +42,16 @@ enum UiClientEvent {
     LoadFriends,
     LoadPendingFriendRequests,
     LoadIncomingFriendRequests,
+    Dial { peer_id: String },
     Close,
 }
 #[derive(Deserialize, Serialize)]
-pub enum UiClientEventResponseError {}
+pub enum UiClientEventResponseError {
+    MessageDeniedNotFriends,
+    NetworkError,
+    PeerNotDialed,
+    SqliteError,
+}
 #[derive(Deserialize, Serialize)]
 pub struct UiClientEventResponse {
     req_id: Uuid,
@@ -57,11 +73,47 @@ pub enum UiClientEventResponseType {
     LoadIncomingFriendRequests(Vec<crate::tui::types::Contact>),
 }
 #[derive(Deserialize, Serialize)]
+pub struct RelayConnectionSuccess {
+    relay_addr: String,
+}
+
+#[derive(Deserialize, Serialize)]
+pub enum RelayConnectionError {
+    DialError,
+    ParseAddrError,
+    ReservationError,
+}
+#[derive(Deserialize, Serialize)]
+pub enum DcutrConnectionError {}
+#[derive(Deserialize, Serialize)]
+pub struct DcutrConnectionSuccess {
+    peer_id: String,
+}
+#[derive(Deserialize, Serialize)]
+
+pub struct RelayServerConnectionEvent(Result<RelayConnectionSuccess, RelayConnectionError>);
+#[derive(Deserialize, Serialize)]
+
+pub struct DcutrConnectionEvent(Result<DcutrConnectionSuccess, DcutrConnectionError>); // THIS CUZ
+// ITS KINDA COOL TO KNOW XD
+#[derive(Deserialize, Serialize)]
 pub enum WriteEvent {
     ReceiveMessage(tui::types::Message),
     ReceiveFriendRequest,
-    DiscoverMdnsContact,
-    MdnsNameChanged { peer_id: String, name: String },
+    DiscoverMdnsContact {
+        // This means the mdns contact is connected
+        peer_id: String,
+        name: Option<String>, // None -> waiting for name; Some -> name
+    },
+    MdnsPeerDisconnected {
+        peer_id: String,
+    },
+    MdnsNameResolved {
+        peer_id: String,
+        name: String,
+    },
+    RelayServerConnection(RelayServerConnectionEvent),
+    DcutrConnection(DcutrConnectionEvent),
     EventResponse(UiClientEventResponse),
 }
 pub struct UiClientEventId(Uuid);
@@ -72,27 +124,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .init();
     create_project_dirs().unwrap();
 
+    // TODO: again remove ARC got fucked
     let sqlite = Arc::new(
         tokio_rusqlite::Connection::open(get_save_file_path(settings::SaveFile::Database))
             .await
             .expect("Couldnt open sqlite connection"),
     );
-    // TODO: Make the hashmap for the ui_request_id -> network_request_id
-    let request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>> = Arc::new(DashMap::new());
     // let sqlite = tokio_rusqlite::Connection::open_in_memory()
     //     .await
     //     .expect("Couldnt open sqlite connection");
 
     // Open unix socket
+    // TODO: handle if sock exists
     let listener = tokio::net::UnixListener::bind("/tmp/p2p-chat.sock").expect("to create");
     let mut _sock = listener.accept().await.expect("to accept");
 
     let (mut sock_read, mut sock_write) = _sock.0.split();
 
     db::migrate_db::migrate(&sqlite).await?;
-    // TODO: Write an error to sock if failed to load settings
+
+    // TODO: Write an error to sock if failed to load settings and close the app
     let settings = Settings::load()?;
     let (api_writer_tx, mut api_writer_rx) = tokio::sync::mpsc::unbounded_channel::<WriteEvent>();
+
+    // TODO: Make the hashmap for the ui_request_id -> network_request_id
+    let request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>> = Arc::new(DashMap::new());
 
     let settings = Arc::new(settings);
     let (event_loop, mut client) = network::new(
@@ -102,50 +158,75 @@ async fn main() -> Result<(), Box<dyn Error>> {
         request_map.clone(),
     )
     .await?;
+
     let close_app = CancellationToken::new();
     tokio::spawn(event_loop.run());
     tokio::select! {
         _ = close_app.cancelled() => {
             return Ok(());
+            // TODO: Close gracefully
+
         }
         req = read_event(&mut sock_read) => {
-            let request = req.clone()?;
-            match request.event {
+            let req = req?;
+            let id = req.req_id;
+            match req.event {
                 UiClientEvent::Close => {
                     close_app.cancel();
                 }
-                UiClientEvent::SendMessage { peer_id, message } => {
-                    client
-                        .send_message(PeerId::from_str(&peer_id).unwrap(), message, req?.req_id)
-                        .await;
+                UiClientEvent::EventRequiringDial(ev) => {
+                    let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+                    client.is_connected(PeerId::from_str(&ev.peer_id).unwrap(), tx).await;
+                    let is_connected = rx.await.expect("to recv");
+                    if !is_connected {
+                        api_writer_tx
+                            .send(crate::WriteEvent::EventResponse(UiClientEventResponse {
+                                result: Err(crate::UiClientEventResponseError::PeerNotDialed),
+                                req_id: id,
+                            }))
+                            .expect("to send");
+                    };
+                    if is_connected {
+                        match ev.event {
+                            UiClientEventRequiringDialMessage::SendMessage { peer_id, message } => {
+                                client
+                                    .send_message(PeerId::from_str(&peer_id).unwrap(), message, id)
+                                    .await;
+                            }
+                            UiClientEventRequiringDialMessage::SendFriendRequest { peer_id } => {
+                                client
+                                    .send_friend_request(PeerId::from_str(&peer_id).unwrap(), id)
+                                    .await
+                            }
+                            UiClientEventRequiringDialMessage::AcceptFriendRequest { peer_id } => {
+                                client
+                                    .accept_friend_req(PeerId::from_str(&peer_id).unwrap(), id)
+                                    .await
+                            }
+                            UiClientEventRequiringDialMessage::DenyFriendRequest { peer_id } => {
+                                client
+                                    .deny_friend_req(PeerId::from_str(&peer_id).unwrap(), id)
+                                    .await
+                            }
+                        }
+                    }
                 }
-                UiClientEvent::SendFriendRequest { peer_id } => {
-                    client
-                        .send_friend_request(PeerId::from_str(&peer_id).unwrap(), req?.req_id)
-                        .await
-                }
-                UiClientEvent::AcceptFriendRequest { peer_id } => {
-                    client
-                        .accept_friend_req(PeerId::from_str(&peer_id).unwrap(), req?.req_id)
-                        .await
-                }
-                UiClientEvent::DenyFriendRequest { peer_id } => {
-                    client
-                        .deny_friend_req(PeerId::from_str(&peer_id).unwrap(), req?.req_id)
-                        .await
-                }
-                UiClientEvent::SearchUsername { username } => client.search_username(username, req?.req_id).await,
-                UiClientEvent::SearchPeer { peer_id } => client.search_peer(peer_id, req?.req_id).await,
+                UiClientEvent::SearchUsername { username } => client.search_username(username, id).await,
+                UiClientEvent::SearchPeer { peer_id } => client.search_peer(peer_id, id).await,
                 UiClientEvent::CheckUsernameAvailability { username } => {
-                    client.check_username_availability(username, req?.req_id).await
+                    client.check_username_availability(username, id).await
                 }
-                UiClientEvent::ChangeUsername { username } => client.change_username(username, req?.req_id).await,
-                UiClientEvent::LoadChatlogPage { from_peer_id, page } => client.load_chatlog_page(from_peer_id.to_string(), page, req?.req_id).await,
-                UiClientEvent::LoadFriends => client.load_friends(req?.req_id).await,
-                UiClientEvent::LoadPendingFriendRequests => client.load_pending_friend_requests(req?.req_id).await,
+                UiClientEvent::ChangeUsername { username } => client.change_username(username, id).await,
+                UiClientEvent::LoadChatlogPage { from_peer_id, page } => client.load_chatlog_page(from_peer_id.to_string(), page, id).await,
+                UiClientEvent::LoadFriends => client.load_friends(id).await,
+                UiClientEvent::LoadPendingFriendRequests => client.load_pending_friend_requests(id).await,
                 UiClientEvent::LoadIncomingFriendRequests => {
-                    client.load_incoming_friend_requests(req?.req_id).await
+                    client.load_incoming_friend_requests(id).await
                 }
+                UiClientEvent::Dial { peer_id } => {
+                    client.dial(PeerId::from_str(&peer_id).unwrap(), id).await
+                }
+
             }
         }
         event = api_writer_rx.recv() => {

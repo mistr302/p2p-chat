@@ -4,7 +4,22 @@ use num_enum::TryFromPrimitive;
 use tokio_rusqlite::{params, rusqlite::Connection};
 
 use crate::db::types::DiscoveryType;
-
+pub fn insert_message(
+    conn: &mut Connection,
+    m: crate::network::chat::Message,
+    message_status: crate::db::types::MessageStatus,
+    peer_id: String,
+) -> tokio_rusqlite::Result<()> {
+    let mut stmt =
+        conn.prepare("INSERT INTO messages (id, content, status, contact_id) VALUES (?, ?, ?, ?)")?;
+    stmt.execute(params![
+        m.id.to_string(),
+        m.content,
+        message_status as u8,
+        peer_id.to_string()
+    ])?;
+    Ok(())
+}
 // TODO: Use the page variable
 pub fn get_message_log(
     conn: &mut Connection,

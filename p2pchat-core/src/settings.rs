@@ -6,7 +6,12 @@ use libp2p::identity::Keypair;
 use serde::{Deserialize, Serialize};
 use std::fs::create_dir_all;
 use std::fs::read_to_string;
-
+// TODO: Expose this as an api for the client too.
+// Option ideas:
+// add relay_reservation_cfg (default 2)
+// add deny_messages_from_non_friends (default true)
+// add connection_preference (default MDNS)
+// add allow_dcutr (default true)
 #[derive(Serialize, Deserialize, Clone, Debug)]
 enum Constraint {
     MaxValue(i32),
@@ -125,6 +130,10 @@ impl Settings {
         }
 
         Ok(user_settings)
+    }
+    // TODO: implement this
+    pub fn check_validity() -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
     }
     pub fn save(settings: &HashMap<SettingName, SettingValue>) {
         let settings_path = get_save_file_path(SaveFile::Settings);

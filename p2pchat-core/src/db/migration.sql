@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS contacts (
     peer_id TEXT PRIMARY KEY,
     discovery_type INTEGER NOT NULL,
     -- public_key
-    name TEXT
+    name TEXT,
+    mdns_provided_name TEXT -- TODO: Use this instead of the discovery_type and prefer name
 );
 -- Name table
 -- states if name is verified by a central server

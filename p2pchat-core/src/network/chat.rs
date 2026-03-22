@@ -1,4 +1,4 @@
-use crate::db::sql_calls::get_message_log;
+use crate::db::sql_calls::{get_message_log, insert_message};
 use crate::network::{Client, EventLoop};
 use crate::network::{Command, CommandType};
 use libp2p::PeerId;
@@ -17,7 +17,8 @@ pub struct Message {
 }
 #[derive(Debug, Serialize, Deserialize)]
 pub enum MessageResponse {
-    ACK,
+    Ack,
+    DeniedNotFriends,
     // InvalidSignature { message_id: Uuid },
     // TODO: maybe smth like not friends
 }
@@ -29,6 +30,19 @@ impl EventLoop {
     pub async fn handle_chat_command(&mut self, command: ChatCommand, req_id: Uuid) {
         match command {
             ChatCommand::SendMessage { receiver, message } => {
+                let m = message.clone();
+                self.sqlite_conn
+                    .call(move |c| {
+                        insert_message(
+                            c,
+                            m,
+                            p2pchat_types::MessageStatus::SentOffNotRead,
+                            receiver.to_string(),
+                        )
+                    })
+                    .await
+                    .expect("to write");
+                // TODO: handle this error
                 let id = self
                     .swarm
                     .behaviour_mut()
