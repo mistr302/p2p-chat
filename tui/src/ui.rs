@@ -1,9 +1,9 @@
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Direction, Layout, Margin, Rect};
+use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
-    Block, Borders, List, ListItem, Padding, Paragraph, Scrollbar, ScrollbarOrientation,
+    Block, Borders, List, ListItem, ListState, Padding, Paragraph, Scrollbar, ScrollbarOrientation,
     ScrollbarState, Tabs, Wrap,
 };
 
@@ -104,9 +104,8 @@ fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
         vertical: 1,
         horizontal: 0,
     });
-    let mut scrollbar_state =
-        ScrollbarState::new(app.contacts.len().saturating_sub(1))
-            .position(app.contact_list_state.selected().unwrap_or(0));
+    let mut scrollbar_state = ScrollbarState::new(app.contacts.len().saturating_sub(1))
+        .position(app.contact_list_state.selected().unwrap_or(0));
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(Some("↑"))
         .end_symbol(Some("↓"));
@@ -116,7 +115,7 @@ fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
 fn draw_right_panel(f: &mut Frame, app: &mut App, area: Rect) {
     match app.selected_tab {
         Tab::Contacts => draw_chat_panel(f, app, area),
-        Tab::Friends => draw_friends_panel(f, area),
+        Tab::Friends => draw_friends_panel(f, app, area),
     }
 }
 
@@ -209,19 +208,262 @@ fn draw_chat_panel(f: &mut Frame, app: &mut App, area: Rect) {
     }
 }
 
-fn draw_friends_panel(f: &mut Frame, area: Rect) {
-    let block = Block::default()
+fn draw_friends_panel(f: &mut Frame, app: &mut App, area: Rect) {
+    let outer_block = Block::default()
         .borders(Borders::ALL)
         .title("Friends")
         .padding(Padding::uniform(1));
 
-    let inner = block.inner(area);
+    let inner = outer_block.inner(area);
+    f.render_widget(outer_block, area);
+
+    // Vertical split: search bar on top, then the 3-column section below
+    let vert = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(1)])
+        .split(inner);
+
+    let search_area = vert[0];
+    let lists_area = vert[1];
+
+    // --- Search input (centered) ---
+    let search_style = if app.focus == Focus::FriendsSearch {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    // Center the search box: leave 20% margin on each side
+    let search_center = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(20),
+            Constraint::Percentage(60),
+            Constraint::Percentage(20),
+        ])
+        .split(search_area);
+
+    let display_text =
+        if app.friends_search_input.is_empty() && app.input_mode != InputMode::Editing {
+            Span::styled("Search users...", Style::default().fg(Color::DarkGray))
+        } else {
+            Span::styled(&app.friends_search_input, search_style)
+        };
+
+    let search_widget = Paragraph::new(Line::from(display_text)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(search_style)
+            .title("Search"),
+    );
+    f.render_widget(search_widget, search_center[1]);
+
+    if app.focus == Focus::FriendsSearch && app.input_mode == InputMode::Editing {
+        let cursor_x = search_center[1].x + app.friends_search_input.len() as u16 + 1;
+        let cursor_y = search_center[1].y + 1;
+        f.set_cursor_position((cursor_x, cursor_y));
+    }
+
+    // --- Three columns: Pending | Incoming | (Search Results / Mdns Results) ---
+    let cols = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 3),
+            Constraint::Ratio(1, 3),
+        ])
+        .split(lists_area);
+
+    let pending_area = cols[0];
+    let incoming_area = cols[1];
+    let right_col_area = cols[2];
+
+    // -- Pending list --
+    draw_friends_list(
+        f,
+        "Pending",
+        &app.pending_requests,
+        &mut app.pending_list_state,
+        app.focus == Focus::FriendsPending,
+        pending_area,
+    );
+
+    // -- Incoming list (with accept/deny buttons) --
+    draw_incoming_list(f, app, incoming_area);
+
+    // -- Right column: split vertically into Search Results + Mdns Results --
+    let right_split = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(right_col_area);
+
+    draw_friends_list(
+        f,
+        "Search Results",
+        &app.search_results,
+        &mut app.search_results_list_state,
+        app.focus == Focus::FriendsSearchResults,
+        right_split[0],
+    );
+
+    draw_friends_list(
+        f,
+        "MdnsResults",
+        &app.mdns_results,
+        &mut app.mdns_results_list_state,
+        app.focus == Focus::FriendsMdnsResults,
+        right_split[1],
+    );
+}
+
+/// Generic helper: renders a contact list with title, highlight, and scrollbar.
+fn draw_friends_list(
+    f: &mut Frame,
+    title: &str,
+    contacts: &[p2pchat_types::Contact],
+    state: &mut ListState,
+    focused: bool,
+    area: Rect,
+) {
+    let border_style = if focused {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let items: Vec<ListItem> = contacts
+        .iter()
+        .map(|c| {
+            let name = if c.name.is_empty() {
+                &c.peer_id
+            } else {
+                &c.name
+            };
+            ListItem::new(Line::from(Span::raw(name)))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(border_style)
+                .title(title),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("> ");
+
+    f.render_stateful_widget(list, area, state);
+
+    // Scrollbar
+    let scrollbar_area = area.inner(Margin {
+        vertical: 1,
+        horizontal: 0,
+    });
+    let mut scrollbar_state = ScrollbarState::new(contacts.len().saturating_sub(1))
+        .position(state.selected().unwrap_or(0));
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(Some("↑"))
+        .end_symbol(Some("↓"));
+    f.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+}
+
+/// Renders the Incoming list with per-row accept (✓) / deny (✗) buttons.
+fn draw_incoming_list(f: &mut Frame, app: &mut App, area: Rect) {
+    let focused = app.focus == Focus::FriendsIncoming;
+    let border_style = if focused {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default().fg(Color::White)
+    };
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(border_style)
+        .title("Incoming");
+
+    let list_inner = block.inner(area);
     f.render_widget(block, area);
 
-    let text = Paragraph::new("Friends view — not yet implemented")
-        .style(Style::default().fg(Color::DarkGray))
-        .alignment(Alignment::Center);
-    f.render_widget(text, inner);
+    // We render each row manually so we can place clickable buttons.
+    app.incoming_button_areas.clear();
+
+    let visible_height = list_inner.height as usize;
+    let offset = app.incoming_list_state.offset();
+    let selected = app.incoming_list_state.selected();
+
+    for (vi, idx) in (offset..).take(visible_height).enumerate() {
+        let Some(contact) = app.incoming_requests.get(idx) else {
+            break;
+        };
+        let row_y = list_inner.y + vi as u16;
+        let is_selected = selected == Some(idx);
+
+        let name = if contact.name.is_empty() {
+            &contact.peer_id
+        } else {
+            &contact.name
+        };
+
+        // Layout: "> name       ✓ ✗"
+        // Reserve 6 cols on the right for " ✓ ✗" (with spacing)
+        let name_width = list_inner.width.saturating_sub(6);
+
+        let row_style = if is_selected {
+            Style::default()
+                .bg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+
+        // Prefix
+        let prefix = if is_selected { "> " } else { "  " };
+        let mut display_name = format!("{prefix}{name}");
+        display_name.truncate(name_width as usize);
+
+        let name_span = Span::styled(display_name, row_style);
+        let name_area = Rect::new(list_inner.x, row_y, name_width, 1);
+        f.render_widget(Paragraph::new(Line::from(name_span)), name_area);
+
+        // Accept button ✓
+        let accept_x = list_inner.x + name_width + 1;
+        let accept_rect = Rect::new(accept_x, row_y, 1, 1);
+        let accept_span = Span::styled(
+            "✓",
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        );
+        f.render_widget(Paragraph::new(Line::from(accept_span)), accept_rect);
+
+        // Deny button ✗
+        let deny_x = accept_x + 2;
+        let deny_rect = Rect::new(deny_x, row_y, 1, 1);
+        let deny_span = Span::styled(
+            "✗",
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        );
+        f.render_widget(Paragraph::new(Line::from(deny_span)), deny_rect);
+
+        app.incoming_button_areas.push((accept_rect, deny_rect));
+    }
+
+    // Scrollbar
+    let scrollbar_area = area.inner(Margin {
+        vertical: 1,
+        horizontal: 0,
+    });
+    let mut scrollbar_state = ScrollbarState::new(app.incoming_requests.len().saturating_sub(1))
+        .position(app.incoming_list_state.selected().unwrap_or(0));
+    let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+        .begin_symbol(Some("↑"))
+        .end_symbol(Some("↓"));
+    f.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
 }
 
 fn draw_status_bar(f: &mut Frame, app: &App, area: Rect) {
