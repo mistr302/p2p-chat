@@ -9,3 +9,6 @@ tokio = { version = "1", features = ["full"] }
 postcard = { version = "1", features = ["alloc"] }
 uuid = { version = "1.18.1", features = ["v4"] }
 anyhow = "1"
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+futures = "0.3"
