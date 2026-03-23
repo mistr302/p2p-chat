@@ -129,6 +129,14 @@ impl EventLoop {
                     }
                     Err(e) => {
                         tracing::error!("SearchPeer request error: {e}");
+                        self.api_writer_tx
+                            .send(crate::WriteEvent::EventResponse(
+                                crate::UiClientEventResponse {
+                                    result: Err(UiClientEventResponseError::PeerSearchTrackerConnectionFailed),
+                                    req_id,
+                                },
+                            ))
+                            .expect("to send");
                     }
                 }
             }
@@ -187,6 +195,14 @@ impl EventLoop {
                     }
                     Err(e) => {
                         tracing::error!("SearchUsername request error: {e}");
+                        self.api_writer_tx
+                            .send(crate::WriteEvent::EventResponse(
+                                crate::UiClientEventResponse {
+                                    result: Err(UiClientEventResponseError::PeerSearchTrackerConnectionFailed),
+                                    req_id,
+                                },
+                            ))
+                            .expect("to send");
                     }
                 }
             }
@@ -246,6 +262,15 @@ impl EventLoop {
                     }
                     Err(e) => {
                         tracing::error!("CheckUsernameAvailability request error: {e}");
+                        self.api_writer_tx
+                            .send(crate::WriteEvent::EventResponse(
+                                crate::UiClientEventResponse {
+                                    result: Err(UiClientEventResponseError::PeerSearchTrackerConnectionFailed),
+                                    req_id,
+                                },
+                            ))
+                            .expect("to send");
+
                         // TODO: Handle request error properly
                     }
                 }
@@ -279,7 +304,28 @@ impl EventLoop {
                                     tracing::error!("Failed to parse ChangeUsername response: {e}");
                                 }
                             }
+                        } else if response.status().is_server_error() {
+                            self.api_writer_tx
+                                .send(crate::WriteEvent::EventResponse(
+                                    crate::UiClientEventResponse {
+                                        result: Err(
+                                            UiClientEventResponseError::PeerSearchServerError,
+                                        ),
+                                        req_id,
+                                    },
+                                ))
+                                .expect("to send");
                         } else {
+                            self.api_writer_tx
+                                .send(crate::WriteEvent::EventResponse(
+                                    crate::UiClientEventResponse {
+                                        result: Err(
+                                            UiClientEventResponseError::ChangeNameUsernameExists,
+                                        ),
+                                        req_id,
+                                    },
+                                ))
+                                .expect("to send");
                             tracing::error!(
                                 "ChangeUsername request failed with status: {}",
                                 response.status()
@@ -287,6 +333,14 @@ impl EventLoop {
                         }
                     }
                     Err(e) => {
+                        self.api_writer_tx
+                            .send(crate::WriteEvent::EventResponse(
+                                crate::UiClientEventResponse {
+                                    result: Err(UiClientEventResponseError::PeerSearchTrackerConnectionFailed),
+                                    req_id,
+                                },
+                            ))
+                            .expect("to send");
                         tracing::error!("ChangeUsername request error: {e}");
                     }
                 }
