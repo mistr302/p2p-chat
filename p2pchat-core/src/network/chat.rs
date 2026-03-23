@@ -2,6 +2,7 @@ use crate::db::sql_calls::{get_message_log, insert_message};
 use crate::network::{Client, EventLoop};
 use crate::network::{Command, CommandType};
 use libp2p::PeerId;
+use p2pchat_types::api::UiClientEventResponseType;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -61,9 +62,7 @@ impl EventLoop {
                             .send(crate::WriteEvent::EventResponse(
                                 crate::UiClientEventResponse {
                                     req_id,
-                                    result: Ok(crate::UiClientEventResponseType::LoadChatlogPage(
-                                        log,
-                                    )),
+                                    result: Ok(UiClientEventResponseType::LoadChatlogPage(log)),
                                 },
                             ))
                             .expect("to send");

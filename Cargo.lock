@@ -2741,7 +2741,6 @@ dependencies = [
  "base64",
  "crossterm",
  "dashmap",
- "directories",
  "futures",
  "futures-timer",
  "identify",
@@ -2765,8 +2764,13 @@ dependencies = [
 name = "p2pchat-types"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "base64",
+ "directories",
+ "libp2p",
  "num_enum",
  "serde",
+ "serde_json",
  "uuid",
 ]
 

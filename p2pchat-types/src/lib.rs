@@ -1,3 +1,5 @@
+pub mod api;
+pub mod settings;
 use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
 

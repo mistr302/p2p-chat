@@ -6,7 +6,7 @@ use libp2p::{
     identity::Keypair,
     mdns, noise,
     request_response::{self, OutboundRequestId, ProtocolSupport},
-    swarm::{ConnectionId, NetworkBehaviour, SwarmEvent},
+    swarm::{NetworkBehaviour, SwarmEvent},
     tcp, yamux,
 };
 use num_enum::TryFromPrimitive;
@@ -21,19 +21,22 @@ use tokio_rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::{
-    DcutrConnectionSuccess, UiClientEventId, UiClientEventResponse, UiClientEventResponseType,
-    WriteEvent,
-    db::{
-        sql_calls::insert_message,
-        types::{DiscoveryType, MessageStatus},
-    },
+    UiClientEventId, UiClientEventResponse, WriteEvent,
+    db::types::{DiscoveryType, MessageStatus},
     network::{
         chat::{ChatCommand, DirectMessageRequest, DirectMessageResponse, MessageResponse},
         friends::{FriendCommand, FriendRequest, FriendResponse},
     },
-    settings::{SettingName, SettingValue},
     tui::types::Contact,
 };
+use p2pchat_types::{
+    api::{
+        DcutrConnectionEvent, DcutrConnectionSuccess, RelayConnectionError,
+        RelayServerConnectionEvent, UiClientEventResponseType,
+    },
+    settings::{SettingName, SettingValue},
+};
+
 pub mod chat;
 pub mod friends;
 pub mod signable;
@@ -164,7 +167,7 @@ pub(crate) async fn new(
             tracing::error!("Failed to dial relay: {e}");
             api_writer_tx
                 .send(WriteEvent::RelayServerConnection(
-                    crate::RelayServerConnectionEvent(Err(crate::RelayConnectionError::DialError)),
+                    RelayServerConnectionEvent(Err(RelayConnectionError::DialError)),
                 ))
                 .expect("to send");
         }
@@ -336,11 +339,11 @@ impl EventLoop {
                 // TODO: add connection_id if libp2p allows it to be public someday
                 if ev.result.is_ok() {
                     self.api_writer_tx
-                        .send(WriteEvent::DcutrConnection(crate::DcutrConnectionEvent(
-                            Ok(DcutrConnectionSuccess {
+                        .send(WriteEvent::DcutrConnection(DcutrConnectionEvent(Ok(
+                            DcutrConnectionSuccess {
                                 peer_id: ev.remote_peer_id.to_string(),
-                            }),
-                        )))
+                            },
+                        ))))
                         .expect("to send");
                 }
             }

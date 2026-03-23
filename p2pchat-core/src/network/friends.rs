@@ -1,4 +1,5 @@
 use libp2p::PeerId;
+use p2pchat_types::api::UiClientEventResponseType;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -98,11 +99,9 @@ impl EventLoop {
                                     self.api_writer_tx
                                         .send(crate::WriteEvent::EventResponse(
                                             crate::UiClientEventResponse {
-                                                result: Ok(
-                                                    crate::UiClientEventResponseType::SearchPeer {
-                                                        username: result.username,
-                                                    },
-                                                ),
+                                                result: Ok(UiClientEventResponseType::SearchPeer {
+                                                    username: result.username,
+                                                }),
                                                 req_id,
                                             },
                                         ))
@@ -138,7 +137,7 @@ impl EventLoop {
                                             crate::UiClientEventResponse {
                                                 req_id,
                                                 result: Ok(
-                                                    crate::UiClientEventResponseType::SearchUsername {
+                                                    UiClientEventResponseType::SearchUsername {
                                                         peer_id: result.peer_id,
                                                     },
                                                 ),
@@ -175,7 +174,7 @@ impl EventLoop {
                                             crate::UiClientEventResponse {
                                                 req_id,
                                                 result: Ok(
-                                                    crate::UiClientEventResponseType::CheckUsernameAvailability(
+                                                    UiClientEventResponseType::CheckUsernameAvailability(
                                                         false,
                                                     ),
                                                 ),
@@ -197,7 +196,7 @@ impl EventLoop {
                                     crate::UiClientEventResponse {
                                         req_id,
                                         result: Ok(
-                                            crate::UiClientEventResponseType::CheckUsernameAvailability(
+                                            UiClientEventResponseType::CheckUsernameAvailability(
                                                 true,
                                             ),
                                         ),
@@ -227,7 +226,7 @@ impl EventLoop {
                                             crate::UiClientEventResponse {
                                                 req_id,
                                                 result: Ok(
-                                                    crate::UiClientEventResponseType::ChangeUsername,
+                                                    UiClientEventResponseType::ChangeUsername,
                                                 ),
                                             },
                                         ))
@@ -261,7 +260,7 @@ impl EventLoop {
                             .send(crate::WriteEvent::EventResponse(
                                 crate::UiClientEventResponse {
                                     req_id,
-                                    result: Ok(crate::UiClientEventResponseType::LoadFriends(f)),
+                                    result: Ok(UiClientEventResponseType::LoadFriends(f)),
                                 },
                             ))
                             .expect("to send");
@@ -281,7 +280,7 @@ impl EventLoop {
                                 crate::UiClientEventResponse {
                                     req_id,
                                     result: Ok(
-                                        crate::UiClientEventResponseType::LoadPendingFriendRequests(
+                                        UiClientEventResponseType::LoadPendingFriendRequests(
                                             requests,
                                         ),
                                     ),
@@ -303,7 +302,7 @@ impl EventLoop {
                                 crate::UiClientEventResponse {
                                     req_id,
                                     result: Ok(
-                                        crate::UiClientEventResponseType::LoadIncomingFriendRequests(
+                                        UiClientEventResponseType::LoadIncomingFriendRequests(
                                             requests,
                                         ),
                                     ),

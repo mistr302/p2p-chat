@@ -2,127 +2,19 @@ mod db;
 mod network;
 mod settings;
 mod tui;
-use crate::settings::Settings;
-use crate::settings::{create_project_dirs, get_save_file_path};
 use dashmap::DashMap;
 use libp2p::PeerId;
 use libp2p::request_response::OutboundRequestId;
-use serde::{Deserialize, Serialize};
+use p2pchat_types::api::{
+    CriticalFailure, UiClientEvent, UiClientEventId, UiClientEventRequiringDialMessage,
+    UiClientEventResponse, UiClientEventResponseError, UiClientRequest, WriteEvent,
+};
+use p2pchat_types::settings::{SaveFile, Settings, SettingsLoadError};
+use p2pchat_types::settings::{create_project_dirs, get_save_file_path};
 use std::str::FromStr;
 use std::{error::Error, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
-#[derive(Deserialize, Serialize, Clone)]
-struct UiClientRequest {
-    req_id: Uuid,
-    event: UiClientEvent,
-}
-#[derive(Deserialize, Serialize, Clone)]
-struct UiClientEventRequiringDial {
-    peer_id: String,
-    event: UiClientEventRequiringDialMessage,
-}
-#[derive(Deserialize, Serialize, Clone)]
-enum UiClientEventRequiringDialMessage {
-    SendMessage { peer_id: String, message: String },
-    SendFriendRequest { peer_id: String },
-    AcceptFriendRequest { peer_id: String },
-    DenyFriendRequest { peer_id: String },
-}
-
-#[derive(Deserialize, Serialize, Clone)]
-enum UiClientEvent {
-    EventRequiringDial(UiClientEventRequiringDial),
-    SearchUsername { username: String },
-    SearchPeer { peer_id: String },
-    CheckUsernameAvailability { username: String },
-    ChangeUsername { username: String },
-    LoadChatlogPage { from_peer_id: String, page: usize },
-    LoadFriends,
-    LoadPendingFriendRequests,
-    LoadIncomingFriendRequests,
-    Dial { peer_id: String },
-    Close,
-}
-#[derive(Deserialize, Serialize)]
-pub enum UiClientEventResponseError {
-    MessageDeniedNotFriends,
-    NetworkError,
-    PeerNotDialed,
-    SqliteError,
-}
-#[derive(Deserialize, Serialize)]
-pub struct UiClientEventResponse {
-    req_id: Uuid,
-    result: Result<UiClientEventResponseType, UiClientEventResponseError>,
-}
-#[derive(Deserialize, Serialize)]
-pub enum UiClientEventResponseType {
-    SendMessage,
-    SendFriendRequest,
-    AcceptFriendRequest,
-    DenyFriendRequest,
-    SearchPeer { username: String },
-    SearchUsername { peer_id: String },
-    CheckUsernameAvailability(bool),
-    ChangeUsername,
-    LoadChatlogPage(Vec<crate::tui::types::Message>),
-    LoadFriends(Vec<crate::tui::types::Contact>),
-    LoadPendingFriendRequests(Vec<crate::tui::types::Contact>),
-    LoadIncomingFriendRequests(Vec<crate::tui::types::Contact>),
-}
-#[derive(Deserialize, Serialize)]
-pub struct RelayConnectionSuccess {
-    relay_addr: String,
-}
-
-#[derive(Deserialize, Serialize)]
-pub enum RelayConnectionError {
-    DialError,
-    ParseAddrError,
-    ReservationError,
-}
-#[derive(Deserialize, Serialize)]
-pub enum DcutrConnectionError {}
-#[derive(Deserialize, Serialize)]
-pub struct DcutrConnectionSuccess {
-    peer_id: String,
-}
-#[derive(Deserialize, Serialize)]
-
-pub struct RelayServerConnectionEvent(Result<RelayConnectionSuccess, RelayConnectionError>);
-#[derive(Deserialize, Serialize)]
-
-pub struct DcutrConnectionEvent(Result<DcutrConnectionSuccess, DcutrConnectionError>); // THIS CUZ
-// ITS KINDA COOL TO KNOW XD
-
-#[derive(Deserialize, Serialize)]
-pub enum CriticalFailure {
-    FailedToLoadSettings,
-}
-#[derive(Deserialize, Serialize)]
-pub enum WriteEvent {
-    CriticalFailure(CriticalFailure),
-    ReceiveMessage(tui::types::Message),
-    ReceiveFriendRequest,
-    DiscoverMdnsContact {
-        // This means the mdns contact is connected
-        peer_id: String,
-        name: Option<String>, // None -> waiting for name; Some -> name
-    },
-    MdnsPeerDisconnected {
-        peer_id: String,
-    },
-    MdnsNameResolved {
-        peer_id: String,
-        name: String,
-    },
-    RelayServerConnection(RelayServerConnectionEvent),
-    DcutrConnection(DcutrConnectionEvent),
-    EventResponse(UiClientEventResponse),
-}
-pub struct UiClientEventId(Uuid);
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
@@ -132,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // TODO: again remove ARC got fucked
     let sqlite = Arc::new(
-        tokio_rusqlite::Connection::open(get_save_file_path(settings::SaveFile::Database))
+        tokio_rusqlite::Connection::open(get_save_file_path(SaveFile::Database))
             .await
             .expect("Couldnt open sqlite connection"),
     );
@@ -198,7 +90,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     if !is_connected {
                         api_writer_tx
                             .send(crate::WriteEvent::EventResponse(UiClientEventResponse {
-                                result: Err(crate::UiClientEventResponseError::PeerNotDialed),
+                                result: Err(UiClientEventResponseError::PeerNotDialed),
                                 req_id: id,
                             }))
                             .expect("to send");
