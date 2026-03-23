@@ -1,5 +1,5 @@
 use libp2p::PeerId;
-use p2pchat_types::api::UiClientEventResponseType;
+use p2pchat_types::api::{UiClientEventResponseError, UiClientEventResponseType};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -111,11 +111,20 @@ impl EventLoop {
                                     tracing::error!("Failed to parse SearchPeer response: {e}");
                                 }
                             }
-                        } else {
+                        } else if response.status().is_server_error() {
                             tracing::error!(
                                 "SearchPeer request failed with status: {}",
                                 response.status()
                             );
+                        } else {
+                            self.api_writer_tx
+                                .send(crate::WriteEvent::EventResponse(
+                                    crate::UiClientEventResponse {
+                                        result: Err(UiClientEventResponseError::PeerSearchNotFound),
+                                        req_id,
+                                    },
+                                ))
+                                .expect("to send");
                         }
                     }
                     Err(e) => {
@@ -149,11 +158,31 @@ impl EventLoop {
                                     tracing::error!("Failed to parse SearchUsername response: {e}");
                                 }
                             }
-                        } else {
+                        } else if response.status().is_server_error() {
+                            self.api_writer_tx
+                                .send(crate::WriteEvent::EventResponse(
+                                    crate::UiClientEventResponse {
+                                        result: Err(
+                                            UiClientEventResponseError::PeerSearchServerError,
+                                        ),
+                                        req_id,
+                                    },
+                                ))
+                                .expect("to send");
+
                             tracing::error!(
-                                "SearchUsername request failed with status: {}",
+                                "SearchPeer request failed with status: {}",
                                 response.status()
                             );
+                        } else {
+                            self.api_writer_tx
+                                .send(crate::WriteEvent::EventResponse(
+                                    crate::UiClientEventResponse {
+                                        result: Err(UiClientEventResponseError::PeerSearchNotFound),
+                                        req_id,
+                                    },
+                                ))
+                                .expect("to send");
                         }
                     }
                     Err(e) => {
@@ -183,12 +212,22 @@ impl EventLoop {
                                         .expect("to send");
                                 }
                                 Err(e) => {
-                                    tracing::error!(
-                                        "Failed to parse CheckUsernameAvailability response: {e}"
-                                    );
+                                    tracing::error!("SearchPeer request failed with status",);
                                     // TODO: Handle parse error properly
                                 }
                             }
+                        } else if response.status().is_server_error() {
+                            self.api_writer_tx
+                                .send(crate::WriteEvent::EventResponse(
+                                    crate::UiClientEventResponse {
+                                        result: Err(
+                                            UiClientEventResponseError::PeerSearchServerError,
+                                        ),
+                                        req_id,
+                                    },
+                                ))
+                                .expect("to send");
+                            tracing::error!("Server error")
                         } else {
                             // Username not found, so it's available
                             self.api_writer_tx

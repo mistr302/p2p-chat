@@ -1,6 +1,5 @@
 mod db;
 mod network;
-mod settings;
 mod tui;
 use dashmap::DashMap;
 use libp2p::PeerId;
@@ -72,77 +71,77 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let close_app = CancellationToken::new();
     tokio::spawn(event_loop.run());
-    tokio::select! {
-        _ = close_app.cancelled() => {
-            return Ok(());
-            // TODO: Close gracefully
-
-        }
-        req = read_event(&mut sock_read) => {
-            let req = req?;
-            let id = req.req_id;
-            match req.event {
-                UiClientEvent::Close => {
-                    close_app.cancel();
-                }
-                UiClientEvent::EventRequiringDial(ev) => {
-                    let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
-                    client.is_connected(PeerId::from_str(&ev.peer_id).unwrap(), tx).await;
-                    let is_connected = rx.await.expect("to recv");
-                    if !is_connected {
-                        api_writer_tx
-                            .send(crate::WriteEvent::EventResponse(UiClientEventResponse {
-                                result: Err(UiClientEventResponseError::PeerNotDialed),
-                                req_id: id,
-                            }))
-                            .expect("to send");
-                    };
-                    if is_connected {
-                        match ev.event {
-                            UiClientEventRequiringDialMessage::SendMessage { peer_id, message } => {
-                                client
-                                    .send_message(PeerId::from_str(&peer_id).unwrap(), message, id)
-                                    .await;
-                            }
-                            UiClientEventRequiringDialMessage::SendFriendRequest { peer_id } => {
-                                client
-                                    .send_friend_request(PeerId::from_str(&peer_id).unwrap(), id)
-                                    .await
-                            }
-                            UiClientEventRequiringDialMessage::AcceptFriendRequest { peer_id } => {
-                                client
-                                    .accept_friend_req(PeerId::from_str(&peer_id).unwrap(), id)
-                                    .await
-                            }
-                            UiClientEventRequiringDialMessage::DenyFriendRequest { peer_id } => {
-                                client
-                                    .deny_friend_req(PeerId::from_str(&peer_id).unwrap(), id)
-                                    .await
+    loop {
+        tokio::select! {
+            _ = close_app.cancelled() => {
+                break;
+                // TODO: Close gracefully
+            }
+            req = read_event(&mut sock_read) => {
+                let req = req?;
+                let id = req.req_id;
+                match req.event {
+                    UiClientEvent::Close => {
+                        close_app.cancel();
+                    }
+                    UiClientEvent::EventRequiringDial(ev) => {
+                        let (tx, rx) = tokio::sync::oneshot::channel::<bool>();
+                        client.is_connected(PeerId::from_str(&ev.peer_id).unwrap(), tx).await;
+                        let is_connected = rx.await.expect("to recv");
+                        if !is_connected {
+                            api_writer_tx
+                                .send(crate::WriteEvent::EventResponse(UiClientEventResponse {
+                                    result: Err(UiClientEventResponseError::PeerNotDialed),
+                                    req_id: id,
+                                }))
+                                .expect("to send");
+                        };
+                        if is_connected {
+                            match ev.event {
+                                UiClientEventRequiringDialMessage::SendMessage { peer_id, message } => {
+                                    client
+                                        .send_message(PeerId::from_str(&peer_id).unwrap(), message, id)
+                                        .await;
+                                }
+                                UiClientEventRequiringDialMessage::SendFriendRequest { peer_id } => {
+                                    client
+                                        .send_friend_request(PeerId::from_str(&peer_id).unwrap(), id)
+                                        .await
+                                }
+                                UiClientEventRequiringDialMessage::AcceptFriendRequest { peer_id } => {
+                                    client
+                                        .accept_friend_req(PeerId::from_str(&peer_id).unwrap(), id)
+                                        .await
+                                }
+                                UiClientEventRequiringDialMessage::DenyFriendRequest { peer_id } => {
+                                    client
+                                        .deny_friend_req(PeerId::from_str(&peer_id).unwrap(), id)
+                                        .await
+                                }
                             }
                         }
                     }
+                    UiClientEvent::SearchUsername { username } => client.search_username(username, id).await,
+                    UiClientEvent::SearchPeer { peer_id } => client.search_peer(peer_id, id).await,
+                    UiClientEvent::CheckUsernameAvailability { username } => {
+                        client.check_username_availability(username, id).await
+                    }
+                    UiClientEvent::ChangeUsername { username } => client.change_username(username, id).await,
+                    UiClientEvent::LoadChatlogPage { from_peer_id, page } => client.load_chatlog_page(from_peer_id.to_string(), page, id).await,
+                    UiClientEvent::LoadFriends => client.load_friends(id).await,
+                    UiClientEvent::LoadPendingFriendRequests => client.load_pending_friend_requests(id).await,
+                    UiClientEvent::LoadIncomingFriendRequests => {
+                        client.load_incoming_friend_requests(id).await
+                    }
+                    UiClientEvent::Dial { peer_id } => {
+                        client.dial(PeerId::from_str(&peer_id).unwrap(), id).await
+                    }
                 }
-                UiClientEvent::SearchUsername { username } => client.search_username(username, id).await,
-                UiClientEvent::SearchPeer { peer_id } => client.search_peer(peer_id, id).await,
-                UiClientEvent::CheckUsernameAvailability { username } => {
-                    client.check_username_availability(username, id).await
-                }
-                UiClientEvent::ChangeUsername { username } => client.change_username(username, id).await,
-                UiClientEvent::LoadChatlogPage { from_peer_id, page } => client.load_chatlog_page(from_peer_id.to_string(), page, id).await,
-                UiClientEvent::LoadFriends => client.load_friends(id).await,
-                UiClientEvent::LoadPendingFriendRequests => client.load_pending_friend_requests(id).await,
-                UiClientEvent::LoadIncomingFriendRequests => {
-                    client.load_incoming_friend_requests(id).await
-                }
-                UiClientEvent::Dial { peer_id } => {
-                    client.dial(PeerId::from_str(&peer_id).unwrap(), id).await
-                }
-
             }
-        }
-        event = api_writer_rx.recv() => {
-            // TODO: handle error so it doesnt crash the app xd
-            write_event(&mut sock_write, event).await?;
+            event = api_writer_rx.recv() => {
+                // TODO: handle error so it doesnt crash the app xd
+                write_event(&mut sock_write, event).await?;
+            }
         }
     }
     Ok(())

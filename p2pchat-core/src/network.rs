@@ -1,6 +1,6 @@
 use base64::{Engine as _, engine::general_purpose};
 use dashmap::DashMap;
-use futures::{FutureExt, StreamExt, executor::block_on};
+use futures::StreamExt;
 use libp2p::{
     Multiaddr, PeerId, StreamProtocol, Swarm, dcutr,
     identity::Keypair,
@@ -44,7 +44,8 @@ pub mod types;
 // TODO: !IMPORTANT! Add the relay addr
 pub static RELAY_ADDR: &str = "";
 // TODO: !IMPORTANT! Add the http addr
-pub static HTTP_TRACKER: &str = "localhost:8000";
+pub static HTTP_TRACKER: &str = "127.0.0.1:8000";
+// pub static HTTP_TRACKER: &str = "localhost:8000";
 pub enum CommandType {
     ChatCommand(ChatCommand),
     FriendCommand(FriendCommand),
@@ -127,28 +128,26 @@ pub(crate) async fn new(
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
     // Wait to listen on all interfaces.
-    block_on(async {
-        let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
-        loop {
-            futures::select! {
-                event = swarm.next() => {
-                    match event.unwrap() {
-                        SwarmEvent::NewListenAddr { address, .. } => {
-                            tracing::info!(%address, "Listening on address");
-                        }
-                        // TODO: I dont want it to panic just because i caught another event,
-                        // implement a vector to store the events and handle them after running the
-                        // event loop
-                        event => panic!("{event:?}"),
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+    loop {
+        tokio::select! {
+            event = swarm.next() => {
+                match event.unwrap() {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        tracing::info!(%address, "Listening on address");
                     }
-                }
-                _ = delay => {
-                    // Likely listening on all interfaces now, thus continuing by breaking the loop.
-                    break;
+                    // TODO: I dont want it to panic just because i caught another event,
+                    // implement a vector to store the events and handle them after running the
+                    // event loop
+                    event => panic!("{event:?}"),
                 }
             }
+            _ = tokio::time::sleep_until(deadline) => {
+                // Likely listening on all interfaces now, thus continuing by breaking the loop.
+                break;
+            }
         }
-    });
+    }
 
     // dial relay
     let mut relay_connections = Vec::new();
