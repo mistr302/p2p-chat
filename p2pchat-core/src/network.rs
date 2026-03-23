@@ -22,7 +22,10 @@ use uuid::Uuid;
 
 use crate::{
     UiClientEventId, UiClientEventResponse, WriteEvent,
-    db::types::{DiscoveryType, MessageStatus},
+    db::{
+        sql_calls::{delete_friend_request, insert_friend, insert_friend_request},
+        types::{DiscoveryType, MessageStatus},
+    },
     network::{
         chat::{ChatCommand, DirectMessageRequest, DirectMessageResponse, MessageResponse},
         friends::{FriendCommand, FriendRequest, FriendResponse},
@@ -30,6 +33,7 @@ use crate::{
     tui::types::Contact,
 };
 use p2pchat_types::{
+    FriendRequestType,
     api::{
         DcutrConnectionEvent, DcutrConnectionSuccess, RelayConnectionError,
         RelayServerConnectionEvent, UiClientEventResponseType,
@@ -451,7 +455,16 @@ impl EventLoop {
                     }
                     FriendRequest::AcceptFriend { decision } => {
                         //TODO: add the friend decision to sqlite
-
+                        // TODO: ts could def fail
+                        self.sqlite_conn
+                            .call(move |c| {
+                                if decision {
+                                    insert_friend(c, peer.to_string())?;
+                                }
+                                delete_friend_request(c, peer.to_string())
+                            })
+                            .await
+                            .expect("to work :sob:");
                         self.swarm
                             .behaviour_mut()
                             .friends
@@ -459,7 +472,17 @@ impl EventLoop {
                             .expect("to send res");
                     }
                     FriendRequest::AddFriend => {
-                        //TODO: add the friend request to sqlite
+                        self.sqlite_conn
+                            .call(move |c| {
+                                insert_friend_request(
+                                    c,
+                                    FriendRequestType::Incoming,
+                                    peer.to_string(),
+                                )
+                            })
+                            .await
+                            .expect("to work :sob:");
+
                         self.swarm
                             .behaviour_mut()
                             .friends

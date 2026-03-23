@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    db::sql_calls::{get_friends, get_incoming_friend_requests, get_pending_friend_requests},
+    db::sql_calls::{
+        delete_friend_request, get_friends, get_incoming_friend_requests,
+        get_pending_friend_requests, insert_friend, insert_friend_request,
+    },
     network::{Client, CommandType, EventLoop, HTTP_TRACKER, signable::sign},
 };
 
@@ -71,6 +74,16 @@ impl EventLoop {
             }
             FriendCommand::AddFriend { peer } => {
                 // TODO: Add to sqlite as pending
+                self.sqlite_conn
+                    .call(move |c| {
+                        insert_friend_request(
+                            c,
+                            p2pchat_types::FriendRequestType::Outgoing,
+                            peer.to_string(),
+                        )
+                    })
+                    .await
+                    .expect("to work :sob:");
 
                 let id = self
                     .swarm
@@ -81,7 +94,16 @@ impl EventLoop {
                 // the event is written in swarm
             }
             FriendCommand::AcceptFriend { peer, decision } => {
-                // TODO: Add our decision to sqlite
+                self.sqlite_conn
+                    .call(move |c| {
+                        if decision {
+                            insert_friend(c, peer.to_string())?;
+                        }
+                        delete_friend_request(c, peer.to_string())
+                    })
+                    .await
+                    .expect("to work :sob:");
+
                 let id = self
                     .swarm
                     .behaviour_mut()

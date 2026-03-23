@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use num_enum::TryFromPrimitive;
+use p2pchat_types::FriendRequestType;
 use tokio_rusqlite::{params, rusqlite::Connection};
 
 use crate::db::types::DiscoveryType;
@@ -20,6 +21,27 @@ pub fn insert_message(
     ])?;
     Ok(())
 }
+pub fn insert_friend(conn: &mut Connection, peer_id: String) -> tokio_rusqlite::Result<()> {
+    let mut stmt = conn.prepare("INSERT INTO friends (peer_id) VALUES (?)")?;
+    stmt.execute(params![peer_id])?;
+    Ok(())
+}
+pub fn insert_friend_request(
+    conn: &mut Connection,
+    request_type: FriendRequestType,
+    peer_id: String,
+) -> tokio_rusqlite::Result<()> {
+    let mut stmt =
+        conn.prepare("INSERT INTO pending_friend_requests (request_type, peer_id) VALUES (?, ?)")?;
+    stmt.execute(params![request_type as u8, peer_id])?;
+    Ok(())
+}
+pub fn delete_friend_request(conn: &mut Connection, peer_id: String) -> tokio_rusqlite::Result<()> {
+    let mut stmt = conn.prepare("DELETE from pending_friend_requests WHERE peer_id = ?")?;
+    stmt.execute(params![peer_id])?;
+    Ok(())
+}
+
 // TODO: Use the page variable
 pub fn get_message_log(
     conn: &mut Connection,
