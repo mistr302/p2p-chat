@@ -34,6 +34,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // Open unix socket
     // TODO: handle if sock exists
+    tokio::fs::remove_file("/tmp/p2p-chat.sock").await.unwrap();
     let listener = tokio::net::UnixListener::bind("/tmp/p2p-chat.sock").expect("to create");
     let mut _sock = listener.accept().await.expect("to accept");
 

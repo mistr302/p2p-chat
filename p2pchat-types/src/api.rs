@@ -1,17 +1,17 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct UiClientRequest {
     pub req_id: Uuid,
     pub event: UiClientEvent,
 }
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct UiClientEventRequiringDial {
     pub peer_id: String,
     pub event: UiClientEventRequiringDialMessage,
 }
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub enum UiClientEventRequiringDialMessage {
     SendMessage { peer_id: String, message: String },
     SendFriendRequest { peer_id: String },
@@ -19,7 +19,7 @@ pub enum UiClientEventRequiringDialMessage {
     DenyFriendRequest { peer_id: String },
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub enum UiClientEvent {
     EventRequiringDial(UiClientEventRequiringDial),
     SearchUsername { username: String },
@@ -34,12 +34,12 @@ pub enum UiClientEvent {
     Close,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct UiClientEventResponse {
     pub req_id: Uuid,
     pub result: Result<UiClientEventResponseType, UiClientEventResponseError>,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub enum UiClientEventResponseType {
     SendMessage,
     SendFriendRequest,
@@ -54,43 +54,43 @@ pub enum UiClientEventResponseType {
     LoadPendingFriendRequests(Vec<crate::Contact>),
     LoadIncomingFriendRequests(Vec<crate::Contact>),
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub enum UiClientEventResponseError {
     MessageDeniedNotFriends,
     NetworkError,
     PeerNotDialed,
     SqliteError,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct RelayConnectionSuccess {
     pub relay_addr: String,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub enum RelayConnectionError {
     DialError,
     ParseAddrError,
     ReservationError,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub enum DcutrConnectionError {}
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct DcutrConnectionSuccess {
     pub peer_id: String,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 
 pub struct RelayServerConnectionEvent(pub Result<RelayConnectionSuccess, RelayConnectionError>);
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 
 pub struct DcutrConnectionEvent(pub Result<DcutrConnectionSuccess, DcutrConnectionError>); // THIS CUZ
 // ITS KINDA COOL TO KNOW XD
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub enum CriticalFailure {
     FailedToLoadSettings,
 }
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub enum WriteEvent {
     CriticalFailure(CriticalFailure),
     ReceiveMessage(crate::Message),

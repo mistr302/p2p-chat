@@ -160,7 +160,7 @@ pub(crate) async fn new(
             let relay_reservation_addr = relay_addr
                 .clone()
                 .with(libp2p::multiaddr::Protocol::P2pCircuit); // appends /p2p-circuit
-            swarm.listen_on(relay_reservation_addr)?; // TODO: handle this error
+            swarm.listen_on(relay_reservation_addr); // TODO: !IMPORTANT! handle this error
             relay_connections.push(relay_addr);
         }
         Err(e) => {
