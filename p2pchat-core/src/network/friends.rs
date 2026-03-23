@@ -118,6 +118,7 @@ impl EventLoop {
                         if response.status().is_success() {
                             match response.json::<PeerSearchResponse>().await {
                                 Ok(result) => {
+                                    // TODO: KINDA BIG create a contact
                                     self.api_writer_tx
                                         .send(crate::WriteEvent::EventResponse(
                                             crate::UiClientEventResponse {
@@ -171,6 +172,7 @@ impl EventLoop {
                                 // TODO: create a contact and add to sqlite
                                 // maybe add ttl to names and try to fetch from local db first?
                                 Ok(result) => {
+                                    // TODO: KINDA BIG create a contact
                                     self.api_writer_tx
                                         .send(crate::WriteEvent::EventResponse(
                                             crate::UiClientEventResponse {
