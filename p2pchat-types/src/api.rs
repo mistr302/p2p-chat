@@ -99,6 +99,11 @@ pub enum WriteEvent {
     CriticalFailure(CriticalFailure),
     ReceiveMessage(crate::Message),
     ReceiveFriendRequest,
+    // If decision is true -> in tui refetch contact list and pending friend requests, refetch
+    // pending friend requests either way
+    ReceiveFriendRequestResponse {
+        decision: bool,
+    },
     DiscoverMdnsContact {
         // This means the mdns contact is connected
         peer_id: String,

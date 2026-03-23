@@ -7,7 +7,7 @@ use ratatui::widgets::{
     ScrollbarState, Tabs, Wrap,
 };
 
-use crate::{App, Focus, InputMode, Tab};
+use crate::{App, ConnectionType, Focus, InputMode, Tab};
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let outer = f.area();
@@ -77,7 +77,21 @@ fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 &c.name
             };
-            ListItem::new(Line::from(Span::raw(name)))
+            let dot_color = match app
+                .connection_status
+                .get(&c.peer_id)
+                .copied()
+                .unwrap_or(ConnectionType::NotDialed)
+            {
+                ConnectionType::NotDialed => Color::Red,
+                ConnectionType::Dcutr => Color::Green,
+                ConnectionType::Mdns => Color::Blue,
+                ConnectionType::Relayed => Color::Rgb(255, 165, 0),
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled("● ", Style::default().fg(dot_color)),
+                Span::raw(name),
+            ]))
         })
         .collect();
 

@@ -8,11 +8,12 @@ use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use futures::StreamExt;
-use p2pchat_types::api::{UiClientRequest, WriteEvent};
-use p2pchat_types::{Contact, Message};
+use p2pchat_types::api::{UiClientEvent, UiClientRequest, WriteEvent};
+use p2pchat_types::{Contact, DiscoveryType, Message, MessageStatus};
+use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::widgets::ListState;
-use ratatui::Terminal;
+use std::collections::HashMap;
 use std::io;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
@@ -41,6 +42,14 @@ pub enum Focus {
     FriendsMdnsResults,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ConnectionType {
+    NotDialed,
+    Mdns,
+    Dcutr,
+    Relayed,
+}
+
 pub struct App {
     pub selected_tab: Tab,
     pub contacts: Vec<Contact>,
@@ -67,6 +76,11 @@ pub struct App {
     /// Stored button areas for incoming request accept/deny hit testing
     /// Each entry: (accept_rect, deny_rect)
     pub incoming_button_areas: Vec<(ratatui::layout::Rect, ratatui::layout::Rect)>,
+    // Connection tracking
+    pub connection_status: HashMap<String, ConnectionType>,
+    pub loaded_chat_peer: Option<String>,
+    pub last_chatlog_req_id: Option<uuid::Uuid>,
+    pub pending_dial_actions: HashMap<String, Vec<UiClientRequest>>,
 }
 
 impl App {
@@ -94,6 +108,10 @@ impl App {
             mdns_results: Vec::new(),
             mdns_results_list_state: ListState::default(),
             incoming_button_areas: Vec::new(),
+            connection_status: HashMap::new(),
+            loaded_chat_peer: None,
+            last_chatlog_req_id: None,
+            pending_dial_actions: HashMap::new(),
         }
     }
 
@@ -133,7 +151,12 @@ impl App {
 
     fn next_tab(&mut self) {
         self.selected_tab = match self.selected_tab {
-            Tab::Contacts => Tab::Friends,
+            Tab::Contacts => {
+                // Switching to Friends tab - refresh friend data
+                self.send_request(UiClientEvent::LoadPendingFriendRequests);
+                self.send_request(UiClientEvent::LoadIncomingFriendRequests);
+                Tab::Friends
+            }
             Tab::Friends => Tab::Contacts,
         };
     }
@@ -141,10 +164,19 @@ impl App {
     fn focused_list_next(&mut self) {
         match self.focus {
             Focus::ContactList => self.next_contact(),
-            Focus::FriendsPending => list_next(&mut self.pending_list_state, self.pending_requests.len()),
-            Focus::FriendsIncoming => list_next(&mut self.incoming_list_state, self.incoming_requests.len()),
-            Focus::FriendsSearchResults => list_next(&mut self.search_results_list_state, self.search_results.len()),
-            Focus::FriendsMdnsResults => list_next(&mut self.mdns_results_list_state, self.mdns_results.len()),
+            Focus::FriendsPending => {
+                list_next(&mut self.pending_list_state, self.pending_requests.len())
+            }
+            Focus::FriendsIncoming => {
+                list_next(&mut self.incoming_list_state, self.incoming_requests.len())
+            }
+            Focus::FriendsSearchResults => list_next(
+                &mut self.search_results_list_state,
+                self.search_results.len(),
+            ),
+            Focus::FriendsMdnsResults => {
+                list_next(&mut self.mdns_results_list_state, self.mdns_results.len())
+            }
             _ => {}
         }
     }
@@ -160,38 +192,138 @@ impl App {
         }
     }
 
-    fn accept_selected_incoming(&self) {
+    fn send_request(&self, event: UiClientEvent) {
+        let _ = self.request_tx.send(UiClientRequest {
+            req_id: uuid::Uuid::new_v4(),
+            event,
+        });
+    }
+
+    fn send_requiring_dial(
+        &mut self,
+        peer_id: &str,
+        event: p2pchat_types::api::UiClientEventRequiringDialMessage,
+    ) {
+        let connection = self
+            .connection_status
+            .get(peer_id)
+            .copied()
+            .unwrap_or(ConnectionType::NotDialed);
+
+        let request = UiClientRequest {
+            req_id: uuid::Uuid::new_v4(),
+            event: UiClientEvent::EventRequiringDial(
+                p2pchat_types::api::UiClientEventRequiringDial {
+                    peer_id: peer_id.to_string(),
+                    event,
+                },
+            ),
+        };
+
+        if connection == ConnectionType::NotDialed {
+            // Dial first, queue the action for when connection is established
+            self.send_request(UiClientEvent::Dial {
+                peer_id: peer_id.to_string(),
+            });
+            self.pending_dial_actions
+                .entry(peer_id.to_string())
+                .or_default()
+                .push(request);
+        } else {
+            let _ = self.request_tx.send(request);
+        }
+    }
+
+    fn accept_selected_incoming(&mut self) {
         if let Some(i) = self.incoming_list_state.selected() {
             if let Some(contact) = self.incoming_requests.get(i) {
-                let _ = self.request_tx.send(UiClientRequest {
-                    req_id: uuid::Uuid::new_v4(),
-                    event: p2pchat_types::api::UiClientEvent::EventRequiringDial(
-                        p2pchat_types::api::UiClientEventRequiringDial {
-                            peer_id: contact.peer_id.clone(),
-                            event: p2pchat_types::api::UiClientEventRequiringDialMessage::AcceptFriendRequest {
-                                peer_id: contact.peer_id.clone(),
-                            },
-                        },
-                    ),
-                });
+                let peer_id = contact.peer_id.clone();
+                self.send_requiring_dial(
+                    &peer_id,
+                    p2pchat_types::api::UiClientEventRequiringDialMessage::AcceptFriendRequest {
+                        peer_id: peer_id.clone(),
+                    },
+                );
             }
         }
     }
 
-    fn deny_selected_incoming(&self) {
+    fn deny_selected_incoming(&mut self) {
         if let Some(i) = self.incoming_list_state.selected() {
             if let Some(contact) = self.incoming_requests.get(i) {
-                let _ = self.request_tx.send(UiClientRequest {
-                    req_id: uuid::Uuid::new_v4(),
-                    event: p2pchat_types::api::UiClientEvent::EventRequiringDial(
-                        p2pchat_types::api::UiClientEventRequiringDial {
-                            peer_id: contact.peer_id.clone(),
-                            event: p2pchat_types::api::UiClientEventRequiringDialMessage::DenyFriendRequest {
-                                peer_id: contact.peer_id.clone(),
-                            },
-                        },
-                    ),
-                });
+                let peer_id = contact.peer_id.clone();
+                self.send_requiring_dial(
+                    &peer_id,
+                    p2pchat_types::api::UiClientEventRequiringDialMessage::DenyFriendRequest {
+                        peer_id: peer_id.clone(),
+                    },
+                );
+            }
+        }
+    }
+
+    fn send_chat_message(&mut self) {
+        let message_text = self.input.clone();
+        if message_text.is_empty() {
+            return;
+        }
+        let peer_id = match self.selected_contact() {
+            Some(c) => c.peer_id.clone(),
+            None => return,
+        };
+
+        // Optimistic local update
+        let msg = Message {
+            content: message_text.clone(),
+            id: uuid::Uuid::new_v4(),
+            sender: Contact {
+                peer_id: String::new(),
+                name: self.username.clone(),
+                discovery_type: DiscoveryType::You,
+            },
+            status: MessageStatus::SentOffNotRead,
+        };
+        self.messages.push(msg);
+        self.input.clear();
+
+        self.send_requiring_dial(
+            &peer_id,
+            p2pchat_types::api::UiClientEventRequiringDialMessage::SendMessage {
+                peer_id: peer_id.clone(),
+                message: message_text,
+            },
+        );
+    }
+
+    fn fetch_chatlog_for_selected(&mut self) {
+        let selected_peer_id = self
+            .contact_list_state
+            .selected()
+            .and_then(|i| self.contacts.get(i))
+            .map(|c| c.peer_id.clone());
+
+        if selected_peer_id == self.loaded_chat_peer {
+            return;
+        }
+        self.loaded_chat_peer = selected_peer_id.clone();
+        self.messages.clear();
+        if let Some(peer_id) = selected_peer_id {
+            let req_id = uuid::Uuid::new_v4();
+            self.last_chatlog_req_id = Some(req_id);
+            let _ = self.request_tx.send(UiClientRequest {
+                req_id,
+                event: UiClientEvent::LoadChatlogPage {
+                    from_peer_id: peer_id,
+                    page: 0,
+                },
+            });
+        }
+    }
+
+    fn flush_pending_actions(&mut self, peer_id: &str) {
+        if let Some(actions) = self.pending_dial_actions.remove(peer_id) {
+            for action in actions {
+                let _ = self.request_tx.send(action);
             }
         }
     }
@@ -239,36 +371,58 @@ async fn send_request(
 fn handle_write_event(app: &mut App, event: WriteEvent) {
     match event {
         WriteEvent::ReceiveMessage(msg) => {
-            app.messages.push(msg);
+            // Only push if the message is from the currently viewed contact
+            let dominated_by_current = app
+                .selected_contact()
+                .is_some_and(|c| c.peer_id == msg.sender.peer_id);
+            if dominated_by_current {
+                app.messages.push(msg);
+            }
         }
         WriteEvent::DiscoverMdnsContact { peer_id, name } => {
+            app.connection_status
+                .insert(peer_id.clone(), ConnectionType::Mdns);
             let contact = Contact {
-                peer_id,
+                peer_id: peer_id.clone(),
                 name: name.unwrap_or_default(),
-                discovery_type: p2pchat_types::DiscoveryType::Mdns,
+                discovery_type: DiscoveryType::Mdns,
             };
             if !app.contacts.iter().any(|c| c.peer_id == contact.peer_id) {
-                app.contacts.push(contact);
+                app.contacts.push(contact.clone());
+            }
+            if !app.mdns_results.iter().any(|c| c.peer_id == peer_id) {
+                app.mdns_results.push(contact);
             }
             if app.contact_list_state.selected().is_none() && !app.contacts.is_empty() {
                 app.contact_list_state.select(Some(0));
+                app.fetch_chatlog_for_selected();
             }
+            // Flush pending dial actions for this newly-connected peer
+            app.flush_pending_actions(&peer_id);
         }
         WriteEvent::MdnsPeerDisconnected { peer_id } => {
-            app.contacts.retain(|c| c.peer_id != peer_id);
+            app.connection_status.remove(&peer_id);
+            app.mdns_results.retain(|c| c.peer_id != peer_id);
+            // Only remove purely mdns-discovered contacts (keep friends)
+            app.contacts.retain(|c| {
+                !(c.peer_id == peer_id && c.discovery_type == DiscoveryType::Mdns)
+            });
             if let Some(sel) = app.contact_list_state.selected() {
                 if sel >= app.contacts.len() {
-                    app.contact_list_state
-                        .select(if app.contacts.is_empty() {
-                            None
-                        } else {
-                            Some(app.contacts.len() - 1)
-                        });
+                    app.contact_list_state.select(if app.contacts.is_empty() {
+                        None
+                    } else {
+                        Some(app.contacts.len() - 1)
+                    });
                 }
             }
+            app.fetch_chatlog_for_selected();
         }
         WriteEvent::MdnsNameResolved { peer_id, name } => {
             if let Some(c) = app.contacts.iter_mut().find(|c| c.peer_id == peer_id) {
+                c.name = name.clone();
+            }
+            if let Some(c) = app.mdns_results.iter_mut().find(|c| c.peer_id == peer_id) {
                 c.name = name;
             }
         }
@@ -281,17 +435,72 @@ fn handle_write_event(app: &mut App, event: WriteEvent) {
                 app.relay_connected = false;
             }
         },
-        WriteEvent::EventResponse(_response) => {
-            // TODO: handle event responses
+        WriteEvent::EventResponse(response) => {
+            match response.result {
+                Ok(resp_type) => {
+                    use p2pchat_types::api::UiClientEventResponseType;
+                    match resp_type {
+                        UiClientEventResponseType::LoadChatlogPage(messages) => {
+                            if app.last_chatlog_req_id == Some(response.req_id) {
+                                app.messages = messages;
+                            }
+                        }
+                        UiClientEventResponseType::LoadFriends(friends) => {
+                            for friend in friends {
+                                if !app.contacts.iter().any(|c| c.peer_id == friend.peer_id) {
+                                    app.contacts.push(friend);
+                                }
+                            }
+                            if app.contact_list_state.selected().is_none()
+                                && !app.contacts.is_empty()
+                            {
+                                app.contact_list_state.select(Some(0));
+                                app.fetch_chatlog_for_selected();
+                            }
+                        }
+                        UiClientEventResponseType::LoadPendingFriendRequests(pending) => {
+                            app.pending_requests = pending;
+                        }
+                        UiClientEventResponseType::LoadIncomingFriendRequests(incoming) => {
+                            app.incoming_requests = incoming;
+                        }
+                        UiClientEventResponseType::SearchUsername { peer_id } => {
+                            let contact = Contact {
+                                peer_id: peer_id.clone(),
+                                name: app.friends_search_input.clone(),
+                                discovery_type: DiscoveryType::Tracker,
+                            };
+                            if !app.search_results.iter().any(|c| c.peer_id == peer_id) {
+                                app.search_results.push(contact);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Err(_err) => {}
+            }
         }
         WriteEvent::CriticalFailure(_) => {
             app.should_quit = true;
         }
         WriteEvent::ReceiveFriendRequest => {
-            // TODO: handle friend request notification
+            app.send_request(UiClientEvent::LoadIncomingFriendRequests);
         }
-        WriteEvent::DcutrConnection(_) => {
-            // TODO: handle dcutr connection events
+        WriteEvent::DcutrConnection(event) => {
+            match event.0 {
+                Ok(success) => {
+                    app.connection_status
+                        .insert(success.peer_id.clone(), ConnectionType::Dcutr);
+                    app.flush_pending_actions(&success.peer_id);
+                }
+                Err(_) => {}
+            }
+        }
+        WriteEvent::ReceiveFriendRequestResponse { decision } => {
+            app.send_request(UiClientEvent::LoadPendingFriendRequests);
+            if decision {
+                app.send_request(UiClientEvent::LoadFriends);
+            }
         }
     }
 }
@@ -310,6 +519,12 @@ async fn main() -> anyhow::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(request_tx);
+
+    // Fetch initial data
+    app.send_request(UiClientEvent::LoadFriends);
+    app.send_request(UiClientEvent::LoadPendingFriendRequests);
+    app.send_request(UiClientEvent::LoadIncomingFriendRequests);
+
     let mut event_stream = event::EventStream::new();
 
     let result = loop {
@@ -358,8 +573,18 @@ fn handle_key_event(app: &mut App, key: event::KeyEvent) {
                 app.should_quit = true;
             }
             KeyCode::Tab => app.next_tab(),
-            KeyCode::Char('j') | KeyCode::Down => app.focused_list_next(),
-            KeyCode::Char('k') | KeyCode::Up => app.focused_list_prev(),
+            KeyCode::Char('j') | KeyCode::Down => {
+                app.focused_list_next();
+                if app.focus == Focus::ContactList {
+                    app.fetch_chatlog_for_selected();
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.focused_list_prev();
+                if app.focus == Focus::ContactList {
+                    app.fetch_chatlog_for_selected();
+                }
+            }
             KeyCode::Char('l') | KeyCode::Right => {
                 app.focus = match app.selected_tab {
                     Tab::Contacts => Focus::Chat,
@@ -376,7 +601,6 @@ fn handle_key_event(app: &mut App, key: event::KeyEvent) {
                 Focus::Chat => app.input_mode = InputMode::Editing,
                 Focus::FriendsSearch => app.input_mode = InputMode::Editing,
                 Focus::FriendsIncoming => {
-                    // Enter on incoming = accept
                     app.accept_selected_incoming();
                 }
                 _ => {}
@@ -406,17 +630,10 @@ fn handle_key_event(app: &mut App, key: event::KeyEvent) {
                 if app.focus == Focus::FriendsSearch {
                     let query = app.friends_search_input.clone();
                     if !query.is_empty() {
-                        let _ = app.request_tx.send(UiClientRequest {
-                            req_id: uuid::Uuid::new_v4(),
-                            event: p2pchat_types::api::UiClientEvent::SearchUsername {
-                                username: query,
-                            },
-                        });
+                        app.send_request(UiClientEvent::SearchUsername { username: query });
                     }
                 } else {
-                    // Chat input
-                    // TODO: send message via request_tx
-                    app.input.clear();
+                    app.send_chat_message();
                 }
             }
             KeyCode::Backspace => {
@@ -474,13 +691,12 @@ fn handle_mouse_event(app: &mut App, mouse: event::MouseEvent) {
                     let contact_idx = row.saturating_sub(4) + app.contact_list_state.offset();
                     if contact_idx < app.contacts.len() {
                         app.contact_list_state.select(Some(contact_idx));
+                        app.fetch_chatlog_for_selected();
                     }
                 }
             } else if app.selected_tab == Tab::Friends {
                 // Check accept/deny button hits on incoming requests
-                for (i, (accept_rect, deny_rect)) in
-                    app.incoming_button_areas.iter().enumerate()
-                {
+                for (i, (accept_rect, deny_rect)) in app.incoming_button_areas.iter().enumerate() {
                     if rect_contains(accept_rect, col, row) {
                         app.incoming_list_state.select(Some(i));
                         app.focus = Focus::FriendsIncoming;
@@ -502,8 +718,18 @@ fn handle_mouse_event(app: &mut App, mouse: event::MouseEvent) {
                 app.input_mode = InputMode::Editing;
             }
         }
-        MouseEventKind::ScrollDown => app.focused_list_next(),
-        MouseEventKind::ScrollUp => app.focused_list_prev(),
+        MouseEventKind::ScrollDown => {
+            app.focused_list_next();
+            if app.focus == Focus::ContactList {
+                app.fetch_chatlog_for_selected();
+            }
+        }
+        MouseEventKind::ScrollUp => {
+            app.focused_list_prev();
+            if app.focus == Focus::ContactList {
+                app.fetch_chatlog_for_selected();
+            }
+        }
         _ => {}
     }
 }
