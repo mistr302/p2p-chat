@@ -62,6 +62,8 @@ pub enum UiClientEventResponseError {
     SqliteError,
     PeerSearchNotFound,
     PeerSearchServerError,
+    PeerSearchTrackerConnectionFailed,
+    ChangeNameUsernameExists,
 }
 #[derive(Deserialize, Serialize, Debug)]
 pub struct RelayConnectionSuccess {
