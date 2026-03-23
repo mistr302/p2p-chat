@@ -60,6 +60,8 @@ pub enum UiClientEventResponseError {
     NetworkError,
     PeerNotDialed,
     SqliteError,
+    PeerSearchNotFound,
+    PeerSearchServerError,
 }
 #[derive(Deserialize, Serialize, Debug)]
 pub struct RelayConnectionSuccess {
