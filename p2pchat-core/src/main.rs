@@ -60,6 +60,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>> = Arc::new(DashMap::new());
 
     let settings = Arc::new(settings);
+    // TODO: If this fails also write a CriticalFailure
     let (event_loop, mut client) = network::new(
         sqlite.clone(),
         settings.clone(),
