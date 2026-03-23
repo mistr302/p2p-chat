@@ -9,6 +9,7 @@ use crossterm::terminal::{
 };
 use futures::StreamExt;
 use p2pchat_types::api::{UiClientEvent, UiClientRequest, WriteEvent};
+use p2pchat_types::settings::{SettingName, SettingValue, Settings};
 use p2pchat_types::{Contact, DiscoveryType, Message, MessageStatus};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -519,6 +520,13 @@ async fn main() -> anyhow::Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(request_tx);
+
+    // Load settings and set username
+    if let Ok(settings) = Settings::load() {
+        if let Some(SettingValue::String(Some(name))) = settings.get(&SettingName::Name) {
+            app.username = name.clone();
+        }
+    }
 
     // Fetch initial data
     app.send_request(UiClientEvent::LoadFriends);
