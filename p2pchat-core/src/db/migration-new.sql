@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS friend_requests (
+CREATE TABLE IF NOT EXISTS pending_friend_requests (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     request_type INTEGER NOT NULL,
     peer_id TEXT NOT NULL,
@@ -17,22 +17,22 @@ CREATE TABLE IF NOT EXISTS contacts (
     peer_id TEXT PRIMARY KEY,
     -- public_key maybe after dht
     central_name_id INTEGER,
-    provided_name_id INTEGER
+    provided_name_id INTEGER,
     private_channel_id INTEGER NOT NULL, 
 
-    FOREIGN KEY (private_channel_id) REFERENCES channel(id)
-    FOREIGN KEY (central_name_id) REFERENCES names(id)
+    FOREIGN KEY (private_channel_id) REFERENCES channel(id),
+    FOREIGN KEY (central_name_id) REFERENCES names(id),
     FOREIGN KEY (provided_name_id) REFERENCES names(id)
 );
 CREATE TABLE IF NOT EXISTS names (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ttl DATETIME DEFAULT (datetime('now', '+1 day')),
-    content TEXT NOT NULL,
+    content TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS channels (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT, -- if null use name as channel name
+    name TEXT -- if null use name as channel name
 );
 CREATE TABLE IF NOT EXISTS messages (
     id TEXT PRIMARY KEY,              -- uuid::Uuid as TEXT
