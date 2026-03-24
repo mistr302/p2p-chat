@@ -10,7 +10,8 @@ use crossterm::terminal::{
 use futures::StreamExt;
 use p2pchat_types::api::{UiClientEvent, UiClientRequest, WriteEvent};
 use p2pchat_types::settings::{SettingName, SettingValue, Settings};
-use p2pchat_types::{Contact, DiscoveryType, Message, MessageStatus};
+use p2pchat_types::chrono;
+use p2pchat_types::{Contact, Message, Name};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::widgets::ListState;
@@ -122,10 +123,18 @@ impl App {
             .and_then(|i| self.friends.get(i))
     }
 
-    pub fn selected_contact_name(&self) -> &str {
+    pub fn selected_contact_name(&self) -> String {
         self.selected_contact()
-            .map(|c| c.name.as_str())
-            .unwrap_or("nobody")
+            .map(|c| {
+                if let Some(ref name) = c.central_name {
+                    name.content.clone()
+                } else if let Some(ref name) = c.provided_name {
+                    format!("{} (LAN)", name.content)
+                } else {
+                    c.peer_id.clone()
+                }
+            })
+            .unwrap_or_else(|| "nobody".to_string())
     }
 
     fn next_contact(&mut self) {
@@ -310,10 +319,14 @@ impl App {
             id: uuid::Uuid::new_v4(),
             sender: Contact {
                 peer_id: String::new(),
-                name: self.username.clone(),
-                discovery_type: DiscoveryType::You,
+                central_name: Some(Name {
+                    content: self.username.clone(),
+                    ttl: chrono::Utc::now().naive_utc() + chrono::Duration::days(1),
+                }),
+                provided_name: None,
+                channel_id: 0,
             },
-            status: MessageStatus::SentOffNotRead,
+            created_at: chrono::Utc::now().naive_utc(),
         };
         self.messages.push(msg);
         self.input.clear();
@@ -328,24 +341,25 @@ impl App {
     }
 
     fn fetch_chatlog_for_selected(&mut self) {
-        let selected_peer_id = self
+        let selected = self
             .friend_list_state
             .selected()
-            .and_then(|i| self.friends.get(i))
-            .map(|c| c.peer_id.clone());
+            .and_then(|i| self.friends.get(i));
+
+        let selected_peer_id = selected.map(|c| c.peer_id.clone());
 
         if selected_peer_id == self.loaded_chat_peer {
             return;
         }
-        self.loaded_chat_peer = selected_peer_id.clone();
+        self.loaded_chat_peer = selected_peer_id;
         self.messages.clear();
-        if let Some(peer_id) = selected_peer_id {
+        if let Some(contact) = selected {
             let req_id = uuid::Uuid::new_v4();
             self.last_chatlog_req_id = Some(req_id);
             let _ = self.request_tx.send(UiClientRequest {
                 req_id,
                 event: UiClientEvent::LoadChatlogPage {
-                    from_peer_id: peer_id,
+                    channel_id: contact.channel_id,
                     page: 0,
                 },
             });
@@ -414,10 +428,15 @@ fn handle_write_event(app: &mut App, event: WriteEvent) {
         WriteEvent::DiscoverMdnsContact { peer_id, name } => {
             app.connection_status
                 .insert(peer_id.clone(), ConnectionType::Mdns);
+            let provided_name = name.map(|n| Name {
+                content: n,
+                ttl: chrono::Utc::now().naive_utc() + chrono::Duration::days(1),
+            });
             let contact = Contact {
                 peer_id: peer_id.clone(),
-                name: name.unwrap_or_default(),
-                discovery_type: DiscoveryType::Mdns,
+                central_name: None,
+                provided_name,
+                channel_id: 0,
             };
             if !app.mdns_results.iter().any(|c| c.peer_id == peer_id) {
                 app.mdns_results.push(contact);
@@ -431,7 +450,10 @@ fn handle_write_event(app: &mut App, event: WriteEvent) {
         }
         WriteEvent::MdnsNameResolved { peer_id, name } => {
             if let Some(c) = app.mdns_results.iter_mut().find(|c| c.peer_id == peer_id) {
-                c.name = name;
+                c.provided_name = Some(Name {
+                    content: name,
+                    ttl: chrono::Utc::now().naive_utc() + chrono::Duration::days(1),
+                });
             }
         }
         WriteEvent::RelayServerConnection(relay_event) => match relay_event.0 {
@@ -472,8 +494,12 @@ fn handle_write_event(app: &mut App, event: WriteEvent) {
                     UiClientEventResponseType::SearchUsername { peer_id } => {
                         let contact = Contact {
                             peer_id: peer_id.clone(),
-                            name: app.friends_search_input.clone(),
-                            discovery_type: DiscoveryType::Tracker,
+                            central_name: Some(Name {
+                                content: app.friends_search_input.clone(),
+                                ttl: chrono::Utc::now().naive_utc() + chrono::Duration::days(1),
+                            }),
+                            provided_name: None,
+                            channel_id: 0,
                         };
                         if !app.search_results.iter().any(|c| c.peer_id == peer_id) {
                             app.search_results.push(contact);

@@ -1,3 +1,5 @@
+use p2pchat_types::Contact;
+use p2pchat_types::chrono::Utc;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Direction, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -8,6 +10,35 @@ use ratatui::widgets::{
 };
 
 use crate::{App, ConnectionType, Focus, InputMode, Tab};
+
+/// Returns (display_name, suffix, is_ttl_expired) for a contact.
+/// Prefers central_name; falls back to provided_name with " (LAN)" suffix; then peer_id.
+fn contact_display_info(contact: &Contact) -> (&str, &str, bool) {
+    let now = Utc::now().naive_utc();
+    if let Some(ref name) = contact.central_name {
+        (&name.content, "", name.ttl < now)
+    } else if let Some(ref name) = contact.provided_name {
+        (&name.content, " (LAN)", name.ttl < now)
+    } else {
+        (&contact.peer_id, "", false)
+    }
+}
+
+/// Build a styled Span for a contact name, dimming if TTL is expired.
+fn contact_name_span(contact: &Contact) -> Span<'_> {
+    let (name, suffix, expired) = contact_display_info(contact);
+    let display = if suffix.is_empty() {
+        name.to_string()
+    } else {
+        format!("{name}{suffix}")
+    };
+    let style = if expired {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default()
+    };
+    Span::styled(display, style)
+}
 
 pub fn draw(f: &mut Frame, app: &mut App) {
     let outer = f.area();
@@ -72,11 +103,6 @@ fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
         .friends
         .iter()
         .map(|c| {
-            let name = if c.name.is_empty() {
-                &c.peer_id
-            } else {
-                &c.name
-            };
             let dot_color = match app
                 .connection_status
                 .get(&c.peer_id)
@@ -90,7 +116,7 @@ fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
             };
             ListItem::new(Line::from(vec![
                 Span::styled("● ", Style::default().fg(dot_color)),
-                Span::raw(name),
+                contact_name_span(c),
             ]))
         })
         .collect();
@@ -168,15 +194,17 @@ fn draw_chat_panel(f: &mut Frame, app: &mut App, area: Rect) {
             if !lines.is_empty() {
                 lines.push(Line::from("")); // blank line between sender groups
             }
-            let display_name = if msg.sender.name.is_empty() {
-                &msg.sender.peer_id
+            let (display_name, suffix, expired) = contact_display_info(&msg.sender);
+            let name_text = if suffix.is_empty() {
+                display_name.to_string()
             } else {
-                &msg.sender.name
+                format!("{display_name}{suffix}")
             };
+            let name_color = if expired { Color::DarkGray } else { Color::Cyan };
             lines.push(Line::from(Span::styled(
-                display_name.to_string(),
+                name_text,
                 Style::default()
-                    .fg(Color::Cyan)
+                    .fg(name_color)
                     .add_modifier(Modifier::BOLD),
             )));
             last_sender = Some(sender_id.clone());
@@ -347,14 +375,7 @@ fn draw_friends_list(
 
     let items: Vec<ListItem> = contacts
         .iter()
-        .map(|c| {
-            let name = if c.name.is_empty() {
-                &c.peer_id
-            } else {
-                &c.name
-            };
-            ListItem::new(Line::from(Span::raw(name)))
-        })
+        .map(|c| ListItem::new(Line::from(contact_name_span(c))))
         .collect();
 
     let list = List::new(items)
@@ -417,10 +438,11 @@ fn draw_incoming_list(f: &mut Frame, app: &mut App, area: Rect) {
         let row_y = list_inner.y + vi as u16;
         let is_selected = selected == Some(idx);
 
-        let name = if contact.name.is_empty() {
-            &contact.peer_id
+        let (cname, suffix, expired) = contact_display_info(contact);
+        let name = if suffix.is_empty() {
+            cname.to_string()
         } else {
-            &contact.name
+            format!("{cname}{suffix}")
         };
 
         // Layout: "> name       ✓ ✗"
@@ -428,9 +450,15 @@ fn draw_incoming_list(f: &mut Frame, app: &mut App, area: Rect) {
         let name_width = list_inner.width.saturating_sub(6);
 
         let row_style = if is_selected {
-            Style::default()
+            let mut s = Style::default()
                 .bg(Color::DarkGray)
-                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::BOLD);
+            if expired {
+                s = s.fg(Color::DarkGray);
+            }
+            s
+        } else if expired {
+            Style::default().fg(Color::DarkGray)
         } else {
             Style::default()
         };
