@@ -130,7 +130,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         client.check_username_availability(username, id).await
                     }
                     UiClientEvent::ChangeUsername { username } => client.change_username(username, id).await,
-                    UiClientEvent::LoadChatlogPage { from_peer_id, page } => client.load_chatlog_page(from_peer_id.to_string(), page, id).await,
+                    UiClientEvent::LoadChatlogPage { channel_id, page } => client.load_chatlog_page(channel_id, page, id).await,
                     UiClientEvent::LoadFriends => client.load_friends(id).await,
                     UiClientEvent::LoadPendingFriendRequests => client.load_pending_friend_requests(id).await,
                     UiClientEvent::LoadIncomingFriendRequests => {

@@ -1,5 +1,6 @@
 pub mod api;
 pub mod settings;
+pub use chrono;
 pub use chrono::{DateTime, NaiveDateTime};
 use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
@@ -27,17 +28,24 @@ pub enum MessageStatus {
     SentOffRead = 3,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Name {
+    pub content: String,
+    pub ttl: NaiveDateTime,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub content: String,
     pub id: uuid::Uuid,
     pub sender: Contact,
-    pub created_at: NaiveDateTime, // TODO: date
+    pub created_at: NaiveDateTime,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Contact {
     pub peer_id: String,
-    pub name: String,
-    pub discovery_type: DiscoveryType,
+    pub central_name: Option<Name>,
+    pub provided_name: Option<Name>,
+    pub channel_id: i64,
 }

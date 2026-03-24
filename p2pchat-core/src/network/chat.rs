@@ -25,21 +25,18 @@ pub enum MessageResponse {
 }
 pub enum ChatCommand {
     SendMessage { receiver: PeerId, message: Message },
-    LoadChatLog { from_peer_id: String, page: usize },
+    LoadChatLog { channel_id: i64, page: usize },
 }
 impl EventLoop {
     pub async fn handle_chat_command(&mut self, command: ChatCommand, req_id: Uuid) {
         match command {
             ChatCommand::SendMessage { receiver, message } => {
                 let m = message.clone();
+                let receiver_str = receiver.to_string();
                 self.sqlite_conn
                     .call(move |c| {
-                        insert_message(
-                            c,
-                            m,
-                            p2pchat_types::MessageStatus::SentOffNotRead,
-                            receiver.to_string(),
-                        )
+                        let channel_id = crate::db::sql_calls::get_contact_channel_id(c, receiver_str)?;
+                        insert_message(c, m, channel_id)
                     })
                     .await
                     .expect("to write");
@@ -51,10 +48,10 @@ impl EventLoop {
                     .send_request(&receiver, DirectMessageRequest(message));
                 self.request_map.insert(id, crate::UiClientEventId(req_id));
             }
-            ChatCommand::LoadChatLog { from_peer_id, page } => {
+            ChatCommand::LoadChatLog { channel_id, page } => {
                 let res = self
                     .sqlite_conn
-                    .call(move |c| get_message_log(c, from_peer_id, page))
+                    .call(move |c| get_message_log(c, channel_id, page))
                     .await;
                 match res {
                     Ok(log) => {
@@ -91,12 +88,12 @@ impl Client {
             .await
             .expect("to send");
     }
-    pub async fn load_chatlog_page(&mut self, from_peer_id: String, page: usize, req_id: Uuid) {
+    pub async fn load_chatlog_page(&mut self, channel_id: i64, page: usize, req_id: Uuid) {
         self.command_sender
             .send(Command {
                 // TODO: pass in the actual id instead of generating
                 id: req_id,
-                cmd_type: CommandType::ChatCommand(ChatCommand::LoadChatLog { from_peer_id, page }),
+                cmd_type: CommandType::ChatCommand(ChatCommand::LoadChatLog { channel_id, page }),
             })
             .await
             .expect("to send");

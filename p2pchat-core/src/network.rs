@@ -24,7 +24,10 @@ use uuid::Uuid;
 use crate::{
     UiClientEventId, UiClientEventResponse, WriteEvent,
     db::{
-        sql_calls::{delete_friend_request, get_contact, insert_friend, insert_friend_request},
+        sql_calls::{
+            delete_friend_request, get_contact, get_contact_channel_id, insert_contact,
+            insert_friend, insert_friend_request, insert_message,
+        },
         types::{DiscoveryType, MessageStatus},
     },
     network::{
@@ -311,24 +314,21 @@ impl EventLoop {
                             .call(move |c| get_contact(c, peer_id.to_string()))
                             .await;
                         if let Ok(contact) = r {
+                            let name = contact
+                                .central_name
+                                .as_ref()
+                                .or(contact.provided_name.as_ref())
+                                .map(|n| n.content.clone());
                             self.api_writer_tx
                                 .send(WriteEvent::DiscoverMdnsContact {
                                     peer_id: contact.peer_id,
-                                    name: Some(contact.name),
+                                    name,
                                 })
                                 .expect("to send");
                         } else {
                             let res = self
                                 .sqlite_conn
-                                .call(move |c| {
-                                    let mut stmt = c.prepare(
-                                        "INSERT INTO contacts(peer_id, discovery_type) VALUES(?, ?)",
-                                    )?;
-                                    stmt.execute(params![
-                                        peer_id.to_string(),
-                                        DiscoveryType::Mdns as u8
-                                    ])
-                                })
+                                .call(move |c| insert_contact(c, peer_id.to_string()))
                                 .await;
                             match res {
                                 Ok(_) => self.client.request_name(peer_id).await,
@@ -390,25 +390,15 @@ impl EventLoop {
                         let peer_id = peer;
 
                         let m = message.clone();
-                        self.sqlite_conn
+                        let contact = self
+                            .sqlite_conn
                             .call(move |c| {
-                                let mut stmt = c.prepare("INSERT INTO messages (id, content, status, contact_id) VALUES (?, ?, ?, ?)")?;
-                                stmt.execute(params![m.id.to_string(), m.content, (MessageStatus::ReceivedNotRead as u8), peer_id.to_string()])
+                                let contact = get_contact(c, peer.to_string())?;
+                                insert_message(c, m, contact.channel_id)?;
+                                Ok::<_, tokio_rusqlite::Error>(contact)
                             })
-                            .await.unwrap();
-
-                        let contact = self.sqlite_conn
-                            .call(move |c| {
-                                let mut stmt = c.prepare("SELECT name, discovery_type FROM contacts WHERE peer_id LIKE ?1")?;
-                                stmt.query_one([peer_id.to_string()], |r| {
-                                    Ok(Contact {
-                                        peer_id: peer_id.to_string(),
-                                        name: r.get(0)?,
-                                        discovery_type: DiscoveryType::try_from_primitive(r.get(1)?).unwrap(),
-                                    })
-                                })
-                            })
-                            .await.unwrap();
+                            .await
+                            .unwrap();
 
                         // if message is valid, send ack
                         self.swarm
@@ -421,7 +411,7 @@ impl EventLoop {
                             content: message.content,
                             id: message.id,
                             sender: contact,
-                            status: crate::db::types::MessageStatus::ReceivedNotRead,
+                            created_at: p2pchat_types::chrono::Local::now().naive_local(),
                         };
                         self.api_writer_tx
                             .send(WriteEvent::ReceiveMessage(message))

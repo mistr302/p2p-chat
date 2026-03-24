@@ -26,7 +26,7 @@ pub enum UiClientEvent {
     SearchPeer { peer_id: String },
     CheckUsernameAvailability { username: String },
     ChangeUsername { username: String },
-    LoadChatlogPage { from_peer_id: String, page: usize },
+    LoadChatlogPage { channel_id: i64, page: usize },
     LoadFriends,
     LoadPendingFriendRequests,
     LoadIncomingFriendRequests,
