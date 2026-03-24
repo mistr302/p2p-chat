@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use libp2p::PeerId;
 use num_enum::TryFromPrimitive;
 use p2pchat_types::FriendRequestType;
 use tokio_rusqlite::{params, rusqlite::Connection};
@@ -68,6 +69,24 @@ pub fn get_message_log(
         log.push(m);
     }
     Ok(log)
+}
+
+pub fn get_contact(
+    conn: &mut Connection,
+    peer_id: String,
+) -> tokio_rusqlite::Result<crate::tui::types::Contact> {
+    // TODO: can fail on name being none
+    let mut stmt =
+        conn.prepare("SELECT peer_id, discovery_type, name from contacts WHERE peer_id = ?")?;
+    let res = stmt.query_one(params![peer_id], |r| {
+        let c = crate::tui::types::Contact {
+            peer_id: r.get(0)?,
+            discovery_type: DiscoveryType::try_from_primitive(r.get(1)?).unwrap(),
+            name: r.get(2)?,
+        };
+        Ok(c)
+    })?;
+    Ok(res)
 }
 pub fn get_friends(
     conn: &mut Connection,

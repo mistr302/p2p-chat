@@ -153,6 +153,7 @@ async fn write_event(
     sock_write: &mut (impl AsyncWriteExt + Unpin),
     event: Option<WriteEvent>,
 ) -> anyhow::Result<()> {
+    tracing::info!("Writing event: {:?}", event);
     if let Some(write_event) = event {
         let serialized = postcard::to_allocvec(&write_event)?;
         sock_write.write_u64(serialized.len() as u64).await?;

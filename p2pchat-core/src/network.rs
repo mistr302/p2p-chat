@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::{
     UiClientEventId, UiClientEventResponse, WriteEvent,
     db::{
-        sql_calls::{delete_friend_request, insert_friend, insert_friend_request},
+        sql_calls::{delete_friend_request, get_contact, insert_friend, insert_friend_request},
         types::{DiscoveryType, MessageStatus},
     },
     network::{
@@ -306,22 +306,40 @@ impl EventLoop {
                         known.push(peer_id);
                         // TODO: Handle uniqueness maybe select the peer_id first from sqlite and
                         // check if exists
-
-                        let res = self
+                        let r = self
                             .sqlite_conn
-                            .call(move |c| {
-                                let mut stmt = c.prepare(
-                                    "INSERT INTO contacts(peer_id, discovery_type) VALUES(?, ?)",
-                                )?;
-                                stmt.execute(params![
-                                    peer_id.to_string(),
-                                    DiscoveryType::Mdns as u8
-                                ])
-                            })
+                            .call(move |c| get_contact(c, peer_id.to_string()))
                             .await;
-                        match res {
-                            Ok(_) => self.client.request_name(peer_id).await,
-                            Err(e) => tracing::info!("{e}"),
+                        if let Ok(contact) = r {
+                            self.api_writer_tx
+                                .send(WriteEvent::DiscoverMdnsContact {
+                                    peer_id: contact.peer_id,
+                                    name: Some(contact.name),
+                                })
+                                .expect("to send");
+                        } else {
+                            let res = self
+                                .sqlite_conn
+                                .call(move |c| {
+                                    let mut stmt = c.prepare(
+                                        "INSERT INTO contacts(peer_id, discovery_type) VALUES(?, ?)",
+                                    )?;
+                                    stmt.execute(params![
+                                        peer_id.to_string(),
+                                        DiscoveryType::Mdns as u8
+                                    ])
+                                })
+                                .await;
+                            match res {
+                                Ok(_) => self.client.request_name(peer_id).await,
+                                Err(e) => tracing::info!("{e}"),
+                            }
+                            self.api_writer_tx
+                                .send(WriteEvent::DiscoverMdnsContact {
+                                    peer_id: peer_id.to_string(),
+                                    name: None,
+                                })
+                                .expect("to send");
                         }
                         // TODO: Send the mdns record
                     }

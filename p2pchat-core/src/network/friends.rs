@@ -67,10 +67,12 @@ impl EventLoop {
         match command {
             FriendCommand::RequestName { peer } => {
                 // TODO: this is not a ui client event
-                self.swarm
+                let id = self
+                    .swarm
                     .behaviour_mut()
                     .friends
                     .send_request(&peer, FriendRequest::RequestName);
+                self.request_map.insert(id, crate::UiClientEventId(req_id));
             }
             FriendCommand::AddFriend { peer } => {
                 // TODO: Add to sqlite as pending
