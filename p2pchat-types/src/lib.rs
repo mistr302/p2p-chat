@@ -1,8 +1,8 @@
 pub mod api;
 pub mod settings;
+pub use chrono::{DateTime, NaiveDateTime};
 use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
-
 #[derive(Debug, PartialEq, Clone, TryFromPrimitive, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum DiscoveryType {
@@ -32,8 +32,7 @@ pub struct Message {
     pub content: String,
     pub id: uuid::Uuid,
     pub sender: Contact,
-    pub status: MessageStatus,
-    // TODO: date
+    pub created_at: NaiveDateTime, // TODO: date
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
