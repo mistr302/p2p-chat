@@ -469,6 +469,7 @@ impl EventLoop {
                                     name: match name.unwrap() {
                                         SettingValue::String(val) => {
                                             val.clone().unwrap_or("Anonymous".to_string())
+                                            // TODO: actually maybe crash xd
                                         }
                                         _ => unimplemented!("undefined behaviour"),
                                     },
@@ -488,6 +489,9 @@ impl EventLoop {
                             })
                             .await
                             .expect("to work :sob:");
+                        self.api_writer_tx
+                            .send(WriteEvent::ReceiveFriendRequestResponse { decision })
+                            .expect("to send");
                         self.swarm
                             .behaviour_mut()
                             .friends
@@ -505,6 +509,9 @@ impl EventLoop {
                             })
                             .await
                             .expect("to work :sob:");
+                        self.api_writer_tx
+                            .send(WriteEvent::ReceiveFriendRequest)
+                            .expect("to send");
 
                         self.swarm
                             .behaviour_mut()
