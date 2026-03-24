@@ -11,6 +11,7 @@ use libp2p::{
 };
 use num_enum::TryFromPrimitive;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{collections::HashMap, str::FromStr};
 use tokio::sync::{
     Mutex,
@@ -125,6 +126,7 @@ pub(crate) async fn new(
                 friends,
             })
         })?
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(60 * 10)))
         .build();
 
     // Listen on all interfaces and whatever port the OS assigns
