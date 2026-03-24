@@ -115,12 +115,17 @@ Poděkování
 ]
 = Úvod
 Cílem této práce je vytvořit komunikační aplikaci, která zajišťuje bezpečnost a soukromí při zasílání zpráv mezi uživateli, pomocí decentralizace.
-Aplikace se zkládá z čtyřech hlavních částí:
-- p2pchat-core = // TODO
-- p2pchat-relay = // TODO
-- p2pchat-http = // TODO
-- p2pchat-tui = // TODO
 V ideálním případě, komunikují uživatelé napřímo mezi sebou, nebo v horším přes RelayedConnection, kdy relay server slouží jako prostředník a přenáší zprávy mezi uživately
+== Aplikace se zkládá z čtyřech hlavních částí:
+=== p2pchat-core 
+// TODO
+=== p2pchat-relay
+// TODO
+=== p2pchat-http
+// TODO
+=== p2pchat-tui
+// TODO
+//
 == Problém
 Aplikace má za cíl řešit problém ochrany soukromí při odesílání zpráv, které by mohly být čteny poskytovateli centralizovaných chatovacích aplikací, a uchovávání metadat, například kdy komunikujete s kým.
 == Motivace
@@ -170,7 +175,7 @@ v tomto příkladě zapíše WriteEvent::CriticalError a proces se ukončí.
 - Pošleme dotaz na CircuitRelay zda je tento uživatel připojený
 - Pokud ano pokusíme se navázat spojení
 - Pokud se vše povede, máme spojení přes Relay
-- V ideálním případě se nám podaří Dcutr, a máme přímé spojení, tudíž už nemusíme komunikovat přes Relay k tomuto uživateli
+- V ideálním případě se nám podaří Dcutr, a mám přímé spojení, tudíž už nemusíme komunikovat přes Relay k tomuto uživateli
 
 = Systémové požadavky a omezení
 V současné době je aplikace určena pouze pro UNIX-like systémy (Linux, MacOS, BSD).
