@@ -405,9 +405,8 @@ fn handle_write_event(app: &mut App, event: WriteEvent) {
             app.connection_status.remove(&peer_id);
             app.mdns_results.retain(|c| c.peer_id != peer_id);
             // Only remove purely mdns-discovered contacts (keep friends)
-            app.contacts.retain(|c| {
-                !(c.peer_id == peer_id && c.discovery_type == DiscoveryType::Mdns)
-            });
+            app.contacts
+                .retain(|c| !(c.peer_id == peer_id && c.discovery_type == DiscoveryType::Mdns));
             if let Some(sel) = app.contact_list_state.selected() {
                 if sel >= app.contacts.len() {
                     app.contact_list_state.select(if app.contacts.is_empty() {
@@ -436,67 +435,61 @@ fn handle_write_event(app: &mut App, event: WriteEvent) {
                 app.relay_connected = false;
             }
         },
-        WriteEvent::EventResponse(response) => {
-            match response.result {
-                Ok(resp_type) => {
-                    use p2pchat_types::api::UiClientEventResponseType;
-                    match resp_type {
-                        UiClientEventResponseType::LoadChatlogPage(messages) => {
-                            if app.last_chatlog_req_id == Some(response.req_id) {
-                                app.messages = messages;
-                            }
+        WriteEvent::EventResponse(response) => match response.result {
+            Ok(resp_type) => {
+                use p2pchat_types::api::UiClientEventResponseType;
+                match resp_type {
+                    UiClientEventResponseType::LoadChatlogPage(messages) => {
+                        if app.last_chatlog_req_id == Some(response.req_id) {
+                            app.messages = messages;
                         }
-                        UiClientEventResponseType::LoadFriends(friends) => {
-                            for friend in friends {
-                                if !app.contacts.iter().any(|c| c.peer_id == friend.peer_id) {
-                                    app.contacts.push(friend);
-                                }
-                            }
-                            if app.contact_list_state.selected().is_none()
-                                && !app.contacts.is_empty()
-                            {
-                                app.contact_list_state.select(Some(0));
-                                app.fetch_chatlog_for_selected();
-                            }
-                        }
-                        UiClientEventResponseType::LoadPendingFriendRequests(pending) => {
-                            app.pending_requests = pending;
-                        }
-                        UiClientEventResponseType::LoadIncomingFriendRequests(incoming) => {
-                            app.incoming_requests = incoming;
-                        }
-                        UiClientEventResponseType::SearchUsername { peer_id } => {
-                            let contact = Contact {
-                                peer_id: peer_id.clone(),
-                                name: app.friends_search_input.clone(),
-                                discovery_type: DiscoveryType::Tracker,
-                            };
-                            if !app.search_results.iter().any(|c| c.peer_id == peer_id) {
-                                app.search_results.push(contact);
-                            }
-                        }
-                        _ => {}
                     }
+                    UiClientEventResponseType::LoadFriends(friends) => {
+                        for friend in friends {
+                            if !app.contacts.iter().any(|c| c.peer_id == friend.peer_id) {
+                                app.contacts.push(friend);
+                            }
+                        }
+                        if app.contact_list_state.selected().is_none() && !app.contacts.is_empty() {
+                            app.contact_list_state.select(Some(0));
+                            app.fetch_chatlog_for_selected();
+                        }
+                    }
+                    UiClientEventResponseType::LoadPendingFriendRequests(pending) => {
+                        app.pending_requests = pending;
+                    }
+                    UiClientEventResponseType::LoadIncomingFriendRequests(incoming) => {
+                        app.incoming_requests = incoming;
+                    }
+                    UiClientEventResponseType::SearchUsername { peer_id } => {
+                        let contact = Contact {
+                            peer_id: peer_id.clone(),
+                            name: app.friends_search_input.clone(),
+                            discovery_type: DiscoveryType::Tracker,
+                        };
+                        if !app.search_results.iter().any(|c| c.peer_id == peer_id) {
+                            app.search_results.push(contact);
+                        }
+                    }
+                    _ => {}
                 }
-                Err(_err) => {}
             }
-        }
+            Err(_err) => {}
+        },
         WriteEvent::CriticalFailure(_) => {
             app.should_quit = true;
         }
         WriteEvent::ReceiveFriendRequest => {
             app.send_request(UiClientEvent::LoadIncomingFriendRequests);
         }
-        WriteEvent::DcutrConnection(event) => {
-            match event.0 {
-                Ok(success) => {
-                    app.connection_status
-                        .insert(success.peer_id.clone(), ConnectionType::Dcutr);
-                    app.flush_pending_actions(&success.peer_id);
-                }
-                Err(_) => {}
+        WriteEvent::DcutrConnection(event) => match event.0 {
+            Ok(success) => {
+                app.connection_status
+                    .insert(success.peer_id.clone(), ConnectionType::Dcutr);
+                app.flush_pending_actions(&success.peer_id);
             }
-        }
+            Err(_) => {}
+        },
         WriteEvent::ReceiveFriendRequestResponse { decision } => {
             app.send_request(UiClientEvent::LoadPendingFriendRequests);
             if decision {
