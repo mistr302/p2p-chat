@@ -20,13 +20,13 @@ CREATE TABLE IF NOT EXISTS contacts (
     provided_name_id INTEGER,
     private_channel_id INTEGER NOT NULL, 
 
-    FOREIGN KEY (private_channel_id) REFERENCES channel(id),
+    FOREIGN KEY (private_channel_id) REFERENCES channels(id),
     FOREIGN KEY (central_name_id) REFERENCES names(id),
     FOREIGN KEY (provided_name_id) REFERENCES names(id)
 );
 CREATE TABLE IF NOT EXISTS names (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ttl DATETIME DEFAULT (datetime('now', '+1 day')),
+    ttl DATETIME NOT NULL DEFAULT (datetime('now', '+1 day')),
     content TEXT NOT NULL
 );
 

@@ -3,7 +3,7 @@ use tokio_rusqlite::{Connection, Result};
 
 pub async fn migrate(conn: &Connection) -> Result<()> {
     // TODO: Change the path to be win compatible
-    let sql_stmt = read_to_string("src/db/migration.sql").await;
+    let sql_stmt = read_to_string("src/db/migration-new.sql").await;
     conn.call(|conn| {
         let Ok(sql) = sql_stmt else {
             let e = sql_stmt.unwrap_err();
