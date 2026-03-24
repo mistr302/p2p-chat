@@ -70,7 +70,7 @@ pub(crate) async fn new(
     settings: Arc<HashMap<SettingName, SettingValue>>,
     api_writer_tx: UnboundedSender<WriteEvent>,
     request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>,
-) -> anyhow::Result<(EventLoop, Client)> {
+) -> anyhow::Result<(EventLoop, Client, Vec<SwarmEvent<BehaviourEvent>>)> {
     // TODO: Confiugre properly & handle errors
 
     let id = match settings.get(&SettingName::KeyPair) {
@@ -131,6 +131,7 @@ pub(crate) async fn new(
     swarm.listen_on("/ip4/0.0.0.0/udp/0/quic-v1".parse()?)?;
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
+    let mut swarm_event_buffer = vec![];
     // Wait to listen on all interfaces.
     let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
     loop {
@@ -140,10 +141,10 @@ pub(crate) async fn new(
                     SwarmEvent::NewListenAddr { address, .. } => {
                         tracing::info!(%address, "Listening on address");
                     }
-                    // TODO: I dont want it to panic just because i caught another event,
+                    // TODO: !IMPORTANT! I dont want it to panic just because i caught another event,
                     // implement a vector to store the events and handle them after running the
                     // event loop
-                    event => panic!("{event:?}"),
+                    event => swarm_event_buffer.push(event),
                 }
             }
             _ = tokio::time::sleep_until(deadline) => {
@@ -152,7 +153,6 @@ pub(crate) async fn new(
             }
         }
     }
-
     // dial relay
     let mut relay_connections = Vec::new();
     let relay_addr = Multiaddr::from_str(RELAY_ADDR)?;
@@ -197,10 +197,10 @@ pub(crate) async fn new(
         relay_connections: Arc::new(Mutex::new(relay_connections)),
         request_buffer: Mutex::new(HashMap::new()),
     };
-    Ok((event_loop, client))
+    Ok((event_loop, client, swarm_event_buffer))
 }
 #[derive(NetworkBehaviour)]
-struct Behaviour {
+pub struct Behaviour {
     mdns: mdns::tokio::Behaviour,
     direct_message:
         libp2p::request_response::cbor::Behaviour<DirectMessageRequest, DirectMessageResponse>,
@@ -255,7 +255,12 @@ impl Client {
     }
 }
 impl EventLoop {
-    pub async fn run(mut self) {
+    pub async fn run(mut self, buffered_events: Option<Vec<SwarmEvent<BehaviourEvent>>>) {
+        if let Some(buffered) = buffered_events {
+            for ev in buffered {
+                self.handle_event(ev).await;
+            }
+        }
         loop {
             tokio::select! {
                 event = self.swarm.select_next_some() => self.handle_event(event).await,

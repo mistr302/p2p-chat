@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let settings = Arc::new(settings);
     // TODO: If this fails also write a CriticalFailure
-    let (event_loop, mut client) = network::new(
+    let (event_loop, mut client, buffered) = network::new(
         sqlite.clone(),
         settings.clone(),
         api_writer_tx.clone(),
@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     .await?;
 
     let close_app = CancellationToken::new();
-    tokio::spawn(event_loop.run());
+    tokio::spawn(event_loop.run(Some(buffered)));
     loop {
         tokio::select! {
             _ = close_app.cancelled() => {
