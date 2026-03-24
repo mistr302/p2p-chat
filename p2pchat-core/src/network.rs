@@ -282,6 +282,9 @@ impl EventLoop {
         }
     }
     async fn dial_peer(&mut self, peer_id: PeerId) {
+        // attempt to dial as a known peer
+        let _res = self.swarm.dial(peer_id);
+        // dial over the  relay
         for conn in self.relay_connections.lock().await.iter() {
             // TODO: this could be a bit too much to dial every relay just for one
             // connection, use dht after
