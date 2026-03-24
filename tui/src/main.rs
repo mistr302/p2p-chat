@@ -245,6 +245,9 @@ impl App {
                         peer_id: peer_id.clone(),
                     },
                 );
+                // Reload lists to reflect the accepted friend request
+                self.send_request(UiClientEvent::LoadFriends);
+                self.send_request(UiClientEvent::LoadIncomingFriendRequests);
             }
         }
     }
