@@ -26,7 +26,7 @@ use crate::{
     db::{
         sql_calls::{
             delete_friend_request, get_contact, get_contact_channel_id, insert_contact,
-            insert_friend, insert_friend_request, insert_message,
+            insert_friend, insert_friend_request, insert_message, insert_name,
         },
         types::{DiscoveryType, MessageStatus},
     },
@@ -526,9 +526,12 @@ impl EventLoop {
                             let res = self
                                 .sqlite_conn
                                 .call(move |c| {
-                                    let mut stmt =
-                                        c.prepare("UPDATE contacts SET name=? WHERE peer_id = ?")?;
-                                    stmt.execute(params![name, peer.to_string()])
+                                    insert_name(
+                                        c,
+                                        peer.to_string(),
+                                        crate::db::sql_calls::NameType::Provided,
+                                        name,
+                                    )
                                 })
                                 .await;
                             match res {
