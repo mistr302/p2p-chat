@@ -53,8 +53,8 @@ pub enum ConnectionType {
 
 pub struct App {
     pub selected_tab: Tab,
-    pub contacts: Vec<Contact>,
-    pub contact_list_state: ListState,
+    pub friends: Vec<Contact>,
+    pub friend_list_state: ListState,
     pub messages: Vec<Message>,
     pub input: String,
     pub input_mode: InputMode,
@@ -88,8 +88,8 @@ impl App {
     fn new(request_tx: mpsc::UnboundedSender<UiClientRequest>) -> Self {
         Self {
             selected_tab: Tab::Contacts,
-            contacts: Vec::new(),
-            contact_list_state: ListState::default(),
+            friends: Vec::new(),
+            friend_list_state: ListState::default(),
             messages: Vec::new(),
             input: String::new(),
             input_mode: InputMode::Normal,
@@ -117,9 +117,9 @@ impl App {
     }
 
     pub fn selected_contact(&self) -> Option<&Contact> {
-        self.contact_list_state
+        self.friend_list_state
             .selected()
-            .and_then(|i| self.contacts.get(i))
+            .and_then(|i| self.friends.get(i))
     }
 
     pub fn selected_contact_name(&self) -> &str {
@@ -129,25 +129,25 @@ impl App {
     }
 
     fn next_contact(&mut self) {
-        if self.contacts.is_empty() {
+        if self.friends.is_empty() {
             return;
         }
-        let i = match self.contact_list_state.selected() {
-            Some(i) => (i + 1).min(self.contacts.len() - 1),
+        let i = match self.friend_list_state.selected() {
+            Some(i) => (i + 1).min(self.friends.len() - 1),
             None => 0,
         };
-        self.contact_list_state.select(Some(i));
+        self.friend_list_state.select(Some(i));
     }
 
     fn previous_contact(&mut self) {
-        if self.contacts.is_empty() {
+        if self.friends.is_empty() {
             return;
         }
-        let i = match self.contact_list_state.selected() {
+        let i = match self.friend_list_state.selected() {
             Some(i) => i.saturating_sub(1),
             None => 0,
         };
-        self.contact_list_state.select(Some(i));
+        self.friend_list_state.select(Some(i));
     }
 
     fn next_tab(&mut self) {
@@ -263,6 +263,34 @@ impl App {
         }
     }
 
+    fn send_friend_request_to_selected_search(&mut self) {
+        if let Some(i) = self.search_results_list_state.selected() {
+            if let Some(contact) = self.search_results.get(i) {
+                let peer_id = contact.peer_id.clone();
+                self.send_requiring_dial(
+                    &peer_id,
+                    p2pchat_types::api::UiClientEventRequiringDialMessage::SendFriendRequest {
+                        peer_id: peer_id.clone(),
+                    },
+                );
+            }
+        }
+    }
+
+    fn send_friend_request_to_selected_mdns(&mut self) {
+        if let Some(i) = self.mdns_results_list_state.selected() {
+            if let Some(contact) = self.mdns_results.get(i) {
+                let peer_id = contact.peer_id.clone();
+                self.send_requiring_dial(
+                    &peer_id,
+                    p2pchat_types::api::UiClientEventRequiringDialMessage::SendFriendRequest {
+                        peer_id: peer_id.clone(),
+                    },
+                );
+            }
+        }
+    }
+
     fn send_chat_message(&mut self) {
         let message_text = self.input.clone();
         if message_text.is_empty() {
@@ -298,9 +326,9 @@ impl App {
 
     fn fetch_chatlog_for_selected(&mut self) {
         let selected_peer_id = self
-            .contact_list_state
+            .friend_list_state
             .selected()
-            .and_then(|i| self.contacts.get(i))
+            .and_then(|i| self.friends.get(i))
             .map(|c| c.peer_id.clone());
 
         if selected_peer_id == self.loaded_chat_peer {
@@ -388,15 +416,8 @@ fn handle_write_event(app: &mut App, event: WriteEvent) {
                 name: name.unwrap_or_default(),
                 discovery_type: DiscoveryType::Mdns,
             };
-            if !app.contacts.iter().any(|c| c.peer_id == contact.peer_id) {
-                app.contacts.push(contact.clone());
-            }
             if !app.mdns_results.iter().any(|c| c.peer_id == peer_id) {
                 app.mdns_results.push(contact);
-            }
-            if app.contact_list_state.selected().is_none() && !app.contacts.is_empty() {
-                app.contact_list_state.select(Some(0));
-                app.fetch_chatlog_for_selected();
             }
             // Flush pending dial actions for this newly-connected peer
             app.flush_pending_actions(&peer_id);
@@ -404,24 +425,8 @@ fn handle_write_event(app: &mut App, event: WriteEvent) {
         WriteEvent::MdnsPeerDisconnected { peer_id } => {
             app.connection_status.remove(&peer_id);
             app.mdns_results.retain(|c| c.peer_id != peer_id);
-            // Only remove purely mdns-discovered contacts (keep friends)
-            app.contacts
-                .retain(|c| !(c.peer_id == peer_id && c.discovery_type == DiscoveryType::Mdns));
-            if let Some(sel) = app.contact_list_state.selected() {
-                if sel >= app.contacts.len() {
-                    app.contact_list_state.select(if app.contacts.is_empty() {
-                        None
-                    } else {
-                        Some(app.contacts.len() - 1)
-                    });
-                }
-            }
-            app.fetch_chatlog_for_selected();
         }
         WriteEvent::MdnsNameResolved { peer_id, name } => {
-            if let Some(c) = app.contacts.iter_mut().find(|c| c.peer_id == peer_id) {
-                c.name = name.clone();
-            }
             if let Some(c) = app.mdns_results.iter_mut().find(|c| c.peer_id == peer_id) {
                 c.name = name;
             }
@@ -446,12 +451,12 @@ fn handle_write_event(app: &mut App, event: WriteEvent) {
                     }
                     UiClientEventResponseType::LoadFriends(friends) => {
                         for friend in friends {
-                            if !app.contacts.iter().any(|c| c.peer_id == friend.peer_id) {
-                                app.contacts.push(friend);
+                            if !app.friends.iter().any(|c| c.peer_id == friend.peer_id) {
+                                app.friends.push(friend);
                             }
                         }
-                        if app.contact_list_state.selected().is_none() && !app.contacts.is_empty() {
-                            app.contact_list_state.select(Some(0));
+                        if app.friend_list_state.selected().is_none() && !app.friends.is_empty() {
+                            app.friend_list_state.select(Some(0));
                             app.fetch_chatlog_for_selected();
                         }
                     }
@@ -604,6 +609,12 @@ fn handle_key_event(app: &mut App, key: event::KeyEvent) {
                 Focus::FriendsIncoming => {
                     app.accept_selected_incoming();
                 }
+                Focus::FriendsSearchResults => {
+                    app.send_friend_request_to_selected_search();
+                }
+                Focus::FriendsMdnsResults => {
+                    app.send_friend_request_to_selected_mdns();
+                }
                 _ => {}
             },
             KeyCode::Char('x') | KeyCode::Delete => {
@@ -689,9 +700,9 @@ fn handle_mouse_event(app: &mut App, mouse: event::MouseEvent) {
                 app.focus = Focus::ContactList;
                 let row = row as usize;
                 if row >= 4 {
-                    let contact_idx = row.saturating_sub(4) + app.contact_list_state.offset();
-                    if contact_idx < app.contacts.len() {
-                        app.contact_list_state.select(Some(contact_idx));
+                    let contact_idx = row.saturating_sub(4) + app.friend_list_state.offset();
+                    if contact_idx < app.friends.len() {
+                        app.friend_list_state.select(Some(contact_idx));
                         app.fetch_chatlog_for_selected();
                     }
                 }

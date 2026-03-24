@@ -69,7 +69,7 @@ fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     let items: Vec<ListItem> = app
-        .contacts
+        .friends
         .iter()
         .map(|c| {
             let name = if c.name.is_empty() {
@@ -106,20 +106,20 @@ fn draw_left_panel(f: &mut Frame, app: &mut App, area: Rect) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(border_style)
-                .title("Contacts"),
+                .title("Friends"),
         )
         .highlight_style(highlight_style)
         .highlight_symbol("> ");
 
-    f.render_stateful_widget(list, chunks[1], &mut app.contact_list_state);
+    f.render_stateful_widget(list, chunks[1], &mut app.friend_list_state);
 
     // Scrollbar for contact list
     let scrollbar_area = chunks[1].inner(Margin {
         vertical: 1,
         horizontal: 0,
     });
-    let mut scrollbar_state = ScrollbarState::new(app.contacts.len().saturating_sub(1))
-        .position(app.contact_list_state.selected().unwrap_or(0));
+    let mut scrollbar_state = ScrollbarState::new(app.friends.len().saturating_sub(1))
+        .position(app.friend_list_state.selected().unwrap_or(0));
     let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
         .begin_symbol(Some("↑"))
         .end_symbol(Some("↓"));
