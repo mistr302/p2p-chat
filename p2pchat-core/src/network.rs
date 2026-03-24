@@ -141,9 +141,6 @@ pub(crate) async fn new(
                     SwarmEvent::NewListenAddr { address, .. } => {
                         tracing::info!(%address, "Listening on address");
                     }
-                    // TODO: !IMPORTANT! I dont want it to panic just because i caught another event,
-                    // implement a vector to store the events and handle them after running the
-                    // event loop
                     event => swarm_event_buffer.push(event),
                 }
             }
@@ -271,6 +268,7 @@ impl EventLoop {
                         CommandType::Dial { peer_id } => self.dial_peer(peer_id).await,
                         CommandType::IsPeerConnected { sender, peer_id } => {
                             let res = self.swarm.is_connected(&peer_id);
+                            tracing::info!("checking if peer is connected: {res}");
                             sender.send(res).expect("to send");
                         }
                     }
