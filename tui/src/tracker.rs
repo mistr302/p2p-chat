@@ -4,7 +4,7 @@ use p2pchat_types::{Keypair, RegisterResponse, UsernamePayload};
 pub enum TrackerError {
     #[error("Connection failed: {0}")]
     ConnectionFailed(String),
-    #[error("Username not available")]
+    #[error("Username already taken")]
     UsernameNotAvailable,
     #[error("Username not found")]
     UsernameNotFound,
@@ -60,14 +60,24 @@ pub async fn register_username(
     let response = client.post(&url).json(&request_body).send().await
         .map_err(|e| TrackerError::ConnectionFailed(e.to_string()))?;
 
-    if response.status().is_success() {
-        response
-            .json::<RegisterResponse>()
-            .await
-            .map_err(|e| TrackerError::ParseError(e.to_string()))
-    } else if response.status().is_server_error() {
-        Err(TrackerError::ServerError)
-    } else {
-        Err(TrackerError::UsernameNotAvailable)
+    match response.status().as_u16() {
+        200 | 201 => {
+            // 200 OK = updated existing username
+            // 201 CREATED = new registration
+            response
+                .json::<RegisterResponse>()
+                .await
+                .map_err(|e| TrackerError::ParseError(e.to_string()))
+        }
+        409 => {
+            // 409 CONFLICT = username already taken by another peer
+            Err(TrackerError::UsernameNotAvailable)
+        }
+        500..=599 => {
+            Err(TrackerError::ServerError)
+        }
+        _ => {
+            Err(TrackerError::UsernameNotAvailable)
+        }
     }
 }
