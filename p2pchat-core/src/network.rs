@@ -61,9 +61,6 @@ pub mod signable;
 pub mod types;
 // TODO: !IMPORTANT! Add the relay addr
 pub static RELAY_ADDR: &str = "127.0.0.1:6969";
-// TODO: !IMPORTANT! Add the http addr
-pub static HTTP_TRACKER: &str = "127.0.0.1:8000";
-// pub static HTTP_TRACKER: &str = "localhost:8000";
 pub enum CommandType {
     ChatCommand(ChatCommand),
     FriendCommand(FriendCommand),

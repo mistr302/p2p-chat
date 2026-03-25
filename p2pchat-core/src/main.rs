@@ -17,7 +17,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::network::{Client, HTTP_TRACKER, RELAY_ADDR, UiClientRequestRequiringDial};
+use crate::network::{Client, RELAY_ADDR, UiClientRequestRequiringDial};
+use p2pchat_types::HTTP_TRACKER;
 
 #[derive(Debug)]
 struct Args {
