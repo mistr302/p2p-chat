@@ -81,7 +81,7 @@ pub struct Command {
     cmd_type: CommandType,
 }
 pub(crate) async fn new(
-    sqlite_conn: Arc<Connection>,
+    sqlite_conn: Connection,
     settings: Arc<HashMap<SettingName, SettingValue>>,
     api_writer_tx: UnboundedSender<WriteEvent>,
     request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>,
@@ -227,7 +227,7 @@ pub struct EventLoop {
     command_rx: mpsc::Receiver<Command>,
     settings: Arc<HashMap<SettingName, SettingValue>>,
     keys: Keypair,
-    sqlite_conn: Arc<Connection>,
+    sqlite_conn: Connection,
     api_writer_tx: UnboundedSender<WriteEvent>,
     client: Client,
     reqwest_client: reqwest::Client,

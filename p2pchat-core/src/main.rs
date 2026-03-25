@@ -25,17 +25,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .init();
     create_project_dirs().unwrap();
 
-    // TODO: again remove ARC got fucked
     // let sqlite = Arc::new(
     //     tokio_rusqlite::Connection::open(get_save_file_path(SaveFile::Database))
     //         .await
     //         .expect("Couldnt open sqlite connection"),
     // );
-    let sqlite = Arc::new(
-        tokio_rusqlite::Connection::open_in_memory()
-            .await
-            .expect("Couldnt open sqlite connection"),
-    );
+    let sqlite = tokio_rusqlite::Connection::open_in_memory()
+        .await
+        .expect("Couldnt open sqlite connection");
 
     // Open unix socket
     // TODO: handle if sock exists
