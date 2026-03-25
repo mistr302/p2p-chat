@@ -35,7 +35,8 @@ impl EventLoop {
                 let receiver_str = receiver.to_string();
                 self.sqlite_conn
                     .call(move |c| {
-                        let channel_id = crate::db::sql_calls::get_contact_channel_id(c, receiver_str)?;
+                        let channel_id =
+                            crate::db::sql_calls::get_contact_channel_id(c, receiver_str)?;
                         insert_message(c, m, channel_id)
                     })
                     .await
@@ -81,7 +82,6 @@ impl Client {
         };
         self.command_sender
             .send(Command {
-                // TODO: pass in the actual id instead of generating
                 id: req_id,
                 cmd_type: CommandType::ChatCommand(ChatCommand::SendMessage { receiver, message }),
             })
@@ -91,7 +91,6 @@ impl Client {
     pub async fn load_chatlog_page(&mut self, channel_id: i64, page: usize, req_id: Uuid) {
         self.command_sender
             .send(Command {
-                // TODO: pass in the actual id instead of generating
                 id: req_id,
                 cmd_type: CommandType::ChatCommand(ChatCommand::LoadChatLog { channel_id, page }),
             })

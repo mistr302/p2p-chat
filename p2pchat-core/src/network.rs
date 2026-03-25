@@ -15,9 +15,9 @@ use libp2p::{
     tcp, yamux,
 };
 use num_enum::TryFromPrimitive;
-use std::sync::Arc;
 use std::time::Duration;
 use std::{collections::HashMap, str::FromStr};
+use std::{net::Ipv4Addr, sync::Arc};
 use tokio::sync::{
     Mutex,
     mpsc::{self, UnboundedSender},
@@ -60,7 +60,7 @@ pub mod friends;
 pub mod signable;
 pub mod types;
 // TODO: !IMPORTANT! Add the relay addr
-pub static RELAY_ADDR: &str = "";
+pub static RELAY_ADDR: &str = "127.0.0.1:6969";
 // TODO: !IMPORTANT! Add the http addr
 pub static HTTP_TRACKER: &str = "127.0.0.1:8000";
 // pub static HTTP_TRACKER: &str = "localhost:8000";
@@ -170,11 +170,14 @@ pub(crate) async fn new(
             }
         }
     }
-
+    // TODO:  Make this better, and fail friendly and also recurring attempts to listen
+    //
     // Connect to the relay server. Not for the reservation or relayed connection, but to (a) learn
     // our local public address and (b) enable a freshly started relay to learn its public address.
 
-    let relay_addr = Multiaddr::from_str(relay_addr).unwrap();
+    let relay_addr = Multiaddr::empty()
+        .with(Protocol::QuicV1)
+        .with(Protocol::Ip4(Ipv4Addr::from_str(relay_addr).unwrap()));
     swarm.dial(relay_addr.clone()).unwrap();
     futures::executor::block_on(async {
         let mut learned_observed_addr = false;
