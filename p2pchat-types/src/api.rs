@@ -30,7 +30,6 @@ pub enum UiClientEvent {
     LoadFriends,
     LoadPendingFriendRequests,
     LoadIncomingFriendRequests,
-    Dial { peer_id: String },
     Close,
 }
 

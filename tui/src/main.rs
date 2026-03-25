@@ -9,8 +9,8 @@ use crossterm::terminal::{
 };
 use futures::StreamExt;
 use p2pchat_types::api::{UiClientEvent, UiClientRequest, WriteEvent};
-use p2pchat_types::settings::{SettingName, SettingValue, Settings};
 use p2pchat_types::chrono;
+use p2pchat_types::settings::{SettingName, SettingValue, Settings};
 use p2pchat_types::{Contact, Message, Name};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
@@ -232,9 +232,6 @@ impl App {
 
         if connection == ConnectionType::NotDialed {
             // Dial first, queue the action for when connection is established
-            self.send_request(UiClientEvent::Dial {
-                peer_id: peer_id.to_string(),
-            });
             self.pending_dial_actions
                 .entry(peer_id.to_string())
                 .or_default()

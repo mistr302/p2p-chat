@@ -40,11 +40,15 @@ use p2pchat_types::{
     FriendRequestType,
     api::{
         DcutrConnectionEvent, DcutrConnectionSuccess, RelayConnectionError,
-        RelayServerConnectionEvent, UiClientEventResponseType,
+        RelayServerConnectionEvent, UiClientEventRequiringDial, UiClientEventResponseType,
+        UiClientRequest,
     },
     settings::{SettingName, SettingValue},
 };
-
+pub struct UiClientRequestRequiringDial {
+    pub event: UiClientEventRequiringDial,
+    pub id: Uuid,
+}
 pub mod chat;
 pub mod friends;
 pub mod signable;
@@ -63,6 +67,9 @@ pub enum CommandType {
     IsPeerConnected {
         sender: oneshot::Sender<bool>,
         peer_id: PeerId,
+    },
+    BufferEvent {
+        ev: UiClientRequestRequiringDial,
     },
 }
 pub struct Command {
@@ -197,7 +204,7 @@ pub(crate) async fn new(
         reqwest_client: reqwest::Client::new(),
         request_map,
         relay_connections: Arc::new(Mutex::new(relay_connections)),
-        request_buffer: Mutex::new(HashMap::new()),
+        request_buffer: HashMap::new(),
     };
     Ok((event_loop, client, swarm_event_buffer))
 }
@@ -222,7 +229,8 @@ pub struct EventLoop {
     reqwest_client: reqwest::Client,
     request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>,
     relay_connections: Arc<Mutex<Vec<Multiaddr>>>,
-    request_buffer: Mutex<HashMap<PeerId, Vec<Command>>>,
+    // TODO: find out if i can do this safely
+    request_buffer: HashMap<PeerId, Vec<UiClientRequestRequiringDial>>,
 }
 #[derive(Clone)]
 pub(crate) struct Client {
@@ -255,6 +263,18 @@ impl Client {
             .await
             .expect("to send");
     }
+    pub async fn buffer_event(&self, ev: UiClientRequestRequiringDial) {
+        self.command_sender
+            .send(Command {
+                id: Uuid::new_v4(),
+                cmd_type: CommandType::BufferEvent { ev },
+            })
+            .await
+            .expect("to send");
+    }
+    // pub async fn send_event_req_dial(&self) {
+    //     self.command_sender.send(value)
+    // }
 }
 impl EventLoop {
     pub async fn run(mut self, buffered_events: Option<Vec<SwarmEvent<BehaviourEvent>>>) {
@@ -275,6 +295,16 @@ impl EventLoop {
                             let res = self.swarm.is_connected(&peer_id);
                             tracing::info!("checking if peer is connected: {res}");
                             sender.send(res).expect("to send");
+                        }
+                        CommandType::BufferEvent { ev } => {
+                            match self.request_buffer.get_mut(&PeerId::from_str(&ev.event.peer_id).unwrap()) {
+                                Some(v) => {
+                                    v.push(ev);
+                                }
+                                None => {
+                                    self.request_buffer.insert(PeerId::from_str(&ev.event.peer_id).unwrap(), vec![ev]);
+                                }
+                            }
                         }
                     }
                 },
@@ -363,6 +393,19 @@ impl EventLoop {
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 // TODO:
+            }
+            SwarmEvent::ConnectionEstablished {
+                peer_id,
+                connection_id,
+                endpoint,
+                ..
+            } => {
+                // TODO: flush the requests
+                if let Some(requests) = self.request_buffer.remove(&peer_id) {
+                    for req in requests {
+                        crate::resolve_event_req_dial(req.event, req.id, &mut self.client).await;
+                    }
+                }
             }
             SwarmEvent::Behaviour(BehaviourEvent::Dcutr(ev)) => {
                 // TODO: add connection_id if libp2p allows it to be public someday
