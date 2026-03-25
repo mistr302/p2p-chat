@@ -6,7 +6,10 @@ use libp2p::{
     identity::Keypair,
     mdns, noise,
     request_response::{self, OutboundRequestId, ProtocolSupport},
-    swarm::{NetworkBehaviour, SwarmEvent, dial_opts::{DialOpts, PeerCondition}},
+    swarm::{
+        NetworkBehaviour, SwarmEvent,
+        dial_opts::{DialOpts, PeerCondition},
+    },
     tcp, yamux,
 };
 use num_enum::TryFromPrimitive;
@@ -326,7 +329,8 @@ impl EventLoop {
         for conn in self.relay_connections.lock().await.iter() {
             // TODO: this could be a bit too much to dial every relay just for one
             // connection, use dht after
-            let relay_addr = conn.clone()
+            let relay_addr = conn
+                .clone()
                 .with(libp2p::multiaddr::Protocol::P2pCircuit)
                 .with_p2p(peer_id)
                 .unwrap();
@@ -386,7 +390,7 @@ impl EventLoop {
                                 .await;
                             match res {
                                 Ok(_) => {
-                                    self.client.request_name(peer_id).await;
+                                    // self.client.request_name(peer_id).await;
 
                                     // TODO: bruh im actually ashamed of ts
                                     self.client.buffer_event(UiClientRequestRequiringDial {
