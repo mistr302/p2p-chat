@@ -314,10 +314,10 @@ impl EventLoop {
     }
     async fn dial_peer(&mut self, peer_id: PeerId) {
         tracing::info!("dialing peer {peer_id}");
-        // attempt to dial as a known peer with Disconnected condition
-        // This allows redialing when the peer was previously connected but is now disconnected
+        // Use PeerCondition::Always to bypass dial backoff and stale connection state
+        // This is especially important for rediscovered mDNS peers
         let opts = DialOpts::peer_id(peer_id)
-            .condition(PeerCondition::Disconnected)
+            .condition(PeerCondition::Always)
             .build();
         let _res = self.swarm.dial(opts);
         tracing::info!("Dial result: {:?}", _res);
@@ -333,7 +333,7 @@ impl EventLoop {
 
             let relay_opts = DialOpts::peer_id(peer_id)
                 .addresses(vec![relay_addr.clone()])
-                .condition(PeerCondition::Disconnected)
+                .condition(PeerCondition::Always)
                 .build();
 
             match self.swarm.dial(relay_opts) {
@@ -368,6 +368,11 @@ impl EventLoop {
                                 .as_ref()
                                 .or(contact.provided_name.as_ref())
                                 .map(|n| n.content.clone());
+
+                            // This is a rediscovered peer - dial it to reconnect
+                            tracing::info!("Rediscovered known peer {peer_id}, initiating dial");
+                            self.dial_peer(peer_id).await;
+
                             self.api_writer_tx
                                 .send(WriteEvent::DiscoverMdnsContact {
                                     peer_id: contact.peer_id,
@@ -407,19 +412,28 @@ impl EventLoop {
             }
             SwarmEvent::Behaviour(BehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
                 for (peer_id, multiaddr) in list {
+                    tracing::info!("{peer_id} expired mDNS, address {multiaddr} no longer valid");
+                    // Note: libp2p automatically manages address expiration
+                    // We don't need to manually remove addresses
+
                     self.api_writer_tx
                         .send(WriteEvent::MdnsPeerDisconnected {
                             peer_id: peer_id.to_string(),
                         })
                         .expect("receiver not to be dropped");
-                    tracing::info!("{peer_id} expired mDNS, removed {multiaddr}");
                 }
             }
             SwarmEvent::NewListenAddr { address, .. } => {
                 tracing::info!("Local node is listening on {address}");
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
-                // TODO:
+                tracing::info!("Connection closed with peer: {peer_id}");
+            }
+            SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+                tracing::error!("Outgoing connection error to peer {:?}: {error:?}", peer_id);
+            }
+            SwarmEvent::IncomingConnectionError { error, .. } => {
+                tracing::error!("Incoming connection error: {error:?}");
             }
             SwarmEvent::ConnectionEstablished {
                 peer_id,
