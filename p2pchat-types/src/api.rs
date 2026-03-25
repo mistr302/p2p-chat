@@ -109,7 +109,7 @@ pub enum WriteEvent {
         peer_id: String,
         name: Option<String>, // None -> waiting for name; Some -> name
     },
-    MdnsPeerDisconnected {
+    PeerDisconnected {
         // TODO:
         peer_id: String,
     },

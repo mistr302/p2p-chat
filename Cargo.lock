@@ -4551,6 +4551,7 @@ dependencies = [
  "p2pchat-types",
  "postcard",
  "ratatui 0.29.0",
+ "serde",
  "tokio",
  "uuid",
 ]

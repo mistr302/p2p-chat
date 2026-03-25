@@ -20,3 +20,4 @@ anyhow = "1"
 ratatui = "0.29"
 crossterm = { version = "0.28", features = ["event-stream"] }
 futures = "0.3"
+serde = "1.0.228"

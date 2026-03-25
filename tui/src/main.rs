@@ -1,3 +1,4 @@
+mod tracker;
 mod ui;
 
 use crossterm::event::{
@@ -441,7 +442,7 @@ fn handle_write_event(app: &mut App, event: WriteEvent) {
             // Flush pending dial actions for this newly-connected peer
             app.flush_pending_actions(&peer_id);
         }
-        WriteEvent::MdnsPeerDisconnected { peer_id } => {
+        WriteEvent::PeerDisconnected { peer_id } => {
             app.connection_status.remove(&peer_id);
             app.mdns_results.retain(|c| c.peer_id != peer_id);
         }

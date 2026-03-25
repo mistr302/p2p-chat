@@ -1,5 +1,6 @@
 use libp2p::PeerId;
 use p2pchat_types::api::{UiClientEventResponseError, UiClientEventResponseType};
+use p2pchat_types::{PeerSearchResponse, RegisterResponse, UsernamePayload};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,28 +30,9 @@ pub enum FriendCommand {
     AcceptFriend { peer: PeerId, decision: bool },
     SearchPeer { id: String },
     SearchUsername { username: String },
-    CheckUsernameAvailability { username: String },
-    ChangeUsername { username: String },
     LoadFriends,
     LoadPendingFriendRequests,
     LoadIncomingFriendRequests,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct PeerSearchResponse {
-    peer_id: String,
-    username: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct UsernamePayload {
-    username: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct RegisterResponse {
-    peer_id: String,
-    username: String,
 }
 
 impl EventLoop {
@@ -353,26 +335,6 @@ impl Client {
             .send(super::Command {
                 id: req_id,
                 cmd_type: CommandType::FriendCommand(FriendCommand::SearchUsername { username }),
-            })
-            .await
-            .expect("to send request");
-    }
-    pub async fn check_username_availability(&mut self, username: String, req_id: Uuid) {
-        self.command_sender
-            .send(super::Command {
-                id: req_id,
-                cmd_type: CommandType::FriendCommand(FriendCommand::CheckUsernameAvailability {
-                    username,
-                }),
-            })
-            .await
-            .expect("to send request");
-    }
-    pub async fn change_username(&mut self, username: String, req_id: Uuid) {
-        self.command_sender
-            .send(super::Command {
-                id: req_id,
-                cmd_type: CommandType::FriendCommand(FriendCommand::ChangeUsername { username }),
             })
             .await
             .expect("to send request");

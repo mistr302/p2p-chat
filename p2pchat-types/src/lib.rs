@@ -1,9 +1,29 @@
 pub mod api;
 pub mod settings;
+pub mod signable;
 pub use chrono;
 pub use chrono::{DateTime, NaiveDateTime};
+pub use libp2p::identity::Keypair;
 use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
+
+// HTTP Tracker request/response types
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PeerSearchResponse {
+    pub peer_id: String,
+    pub username: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UsernamePayload {
+    pub username: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RegisterResponse {
+    pub peer_id: String,
+    pub username: String,
+}
 #[derive(Debug, PartialEq, Clone, TryFromPrimitive, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum DiscoveryType {
