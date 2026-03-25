@@ -21,7 +21,6 @@ pub enum MessageResponse {
     Ack,
     DeniedNotFriends,
     // InvalidSignature { message_id: Uuid },
-    // TODO: maybe smth like not friends
 }
 pub enum ChatCommand {
     SendMessage { receiver: PeerId, message: Message },

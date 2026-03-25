@@ -17,7 +17,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::network::{Client, UiClientRequestRequiringDial, RELAY_ADDR, HTTP_TRACKER};
+use crate::network::{Client, HTTP_TRACKER, RELAY_ADDR, UiClientRequestRequiringDial};
 
 #[derive(Debug)]
 struct Args {
@@ -94,10 +94,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>> = Arc::new(DashMap::new());
 
     let settings = Arc::new(settings);
-    // TODO: If this fails also write a CriticalFailure
+
     let relay_addr = args.relay_addr.as_deref().unwrap_or(RELAY_ADDR);
     let http_tracker = args.http_tracker.as_deref().unwrap_or(HTTP_TRACKER);
 
+    // TODO: If this fails also write a CriticalFailure
     let (event_loop, mut client, buffered) = network::new(
         sqlite.clone(),
         settings.clone(),

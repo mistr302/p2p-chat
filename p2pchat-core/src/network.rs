@@ -176,8 +176,8 @@ pub(crate) async fn new(
     // our local public address and (b) enable a freshly started relay to learn its public address.
 
     let relay_addr = Multiaddr::empty()
-        .with(Protocol::QuicV1)
-        .with(Protocol::Ip4(Ipv4Addr::from_str(relay_addr).unwrap()));
+        .with(Protocol::Ip4(Ipv4Addr::from_str(relay_addr).unwrap()))
+        .with(Protocol::QuicV1);
     swarm.dial(relay_addr.clone()).unwrap();
     futures::executor::block_on(async {
         let mut learned_observed_addr = false;
@@ -547,7 +547,8 @@ impl EventLoop {
                             })
                             .await
                             .unwrap();
-
+                        // TODO: if not friends send the other response
+                        //
                         // if message is valid, send ack
                         self.swarm
                             .behaviour_mut()
@@ -583,7 +584,10 @@ impl EventLoop {
                                     ))
                                     .expect("to send");
                             }
-                            DirectMessageResponse(MessageResponse::DeniedNotFriends) => {}
+                            DirectMessageResponse(MessageResponse::DeniedNotFriends) => {
+
+                                // TODO:
+                            }
                         }
                     }
                 }
@@ -616,7 +620,6 @@ impl EventLoop {
                             .expect("On Name request to be sent");
                     }
                     FriendRequest::AcceptFriend { decision } => {
-                        //TODO: add the friend decision to sqlite
                         // TODO: ts could def fail
                         self.sqlite_conn
                             .call(move |c| {
