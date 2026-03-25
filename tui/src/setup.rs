@@ -2,6 +2,7 @@ mod tracker;
 
 use std::collections::HashMap;
 use std::io;
+use std::time::Duration;
 
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use crossterm::terminal::{
@@ -17,6 +18,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
+use tokio::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum SettingType {
@@ -48,6 +50,8 @@ struct SetupApp {
     reqwest_client: reqwest::Client,
     keypair: Option<p2pchat_types::Keypair>,
     username_status: Option<String>, // Shows availability or error message
+    username_last_changed: Option<Instant>, // Track when username was last modified
+    username_check_pending: bool, // Whether we need to check username availability
 }
 
 impl SetupApp {
@@ -114,6 +118,8 @@ impl SetupApp {
             reqwest_client: reqwest::Client::new(),
             keypair,
             username_status: None,
+            username_last_changed: None,
+            username_check_pending: false,
         }
     }
 
@@ -156,6 +162,12 @@ impl SetupApp {
         if let Focus::Setting(i) = self.focus {
             if self.fields[i].setting_type == SettingType::HumanInput {
                 self.fields[i].value.push(c);
+                // Mark username for checking if this is the Name field
+                if self.fields[i].name == SettingName::Name {
+                    self.username_last_changed = Some(Instant::now());
+                    self.username_check_pending = true;
+                    self.username_status = None; // Clear old status while typing
+                }
             }
         }
     }
@@ -164,6 +176,12 @@ impl SetupApp {
         if let Focus::Setting(i) = self.focus {
             if self.fields[i].setting_type == SettingType::HumanInput {
                 self.fields[i].value.pop();
+                // Mark username for checking if this is the Name field
+                if self.fields[i].name == SettingName::Name {
+                    self.username_last_changed = Some(Instant::now());
+                    self.username_check_pending = true;
+                    self.username_status = None; // Clear old status while typing
+                }
             }
         }
     }
@@ -522,23 +540,35 @@ async fn main() -> anyhow::Result<()> {
             break;
         }
 
-        if let Event::Key(key) = event::read()? {
-            match key.code {
-                KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                    app.should_quit = true;
-                }
-                KeyCode::Esc => {
-                    app.should_quit = true;
-                }
-                KeyCode::Tab | KeyCode::Down => app.next_focus(),
-                KeyCode::BackTab | KeyCode::Up => app.prev_focus(),
-                KeyCode::Enter => app.handle_enter_async().await,
-                KeyCode::Backspace => app.handle_backspace(),
-                KeyCode::Char(c) => {
-                    app.handle_char(c);
+        // Check if we need to perform username availability check
+        if app.username_check_pending {
+            if let Some(last_changed) = app.username_last_changed {
+                if last_changed.elapsed() >= Duration::from_secs(1) {
+                    app.username_check_pending = false;
                     app.check_username_async().await;
-                },
-                _ => {}
+                }
+            }
+        }
+
+        // Poll for events with a timeout to allow periodic checks
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                match key.code {
+                    KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.should_quit = true;
+                    }
+                    KeyCode::Esc => {
+                        app.should_quit = true;
+                    }
+                    KeyCode::Tab | KeyCode::Down => app.next_focus(),
+                    KeyCode::BackTab | KeyCode::Up => app.prev_focus(),
+                    KeyCode::Enter => app.handle_enter_async().await,
+                    KeyCode::Backspace => app.handle_backspace(),
+                    KeyCode::Char(c) => {
+                        app.handle_char(c);
+                    },
+                    _ => {}
+                }
             }
         }
     }

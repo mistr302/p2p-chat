@@ -7,6 +7,9 @@ pub use libp2p::identity::Keypair;
 use num_enum::TryFromPrimitive;
 use serde::{Deserialize, Serialize};
 
+// HTTP Tracker constants
+pub static HTTP_TRACKER: &str = "127.0.0.1:8000";
+
 // HTTP Tracker request/response types
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PeerSearchResponse {

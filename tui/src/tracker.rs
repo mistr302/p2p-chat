@@ -1,5 +1,4 @@
-use p2pchat_types::{Keypair, PeerSearchResponse, RegisterResponse, UsernamePayload};
-use p2pchat_types::signable::sign;
+use p2pchat_types::{Keypair, RegisterResponse, UsernamePayload};
 
 #[derive(Debug, thiserror::Error)]
 pub enum TrackerError {
@@ -42,10 +41,23 @@ pub async fn register_username(
     username: String,
 ) -> Result<RegisterResponse, TrackerError> {
     let payload = UsernamePayload { username };
-    let signed = sign(payload, keys);
+
+    // Format the request to match server expectations
+    let message = serde_json::to_string(&payload)
+        .map_err(|e| TrackerError::ParseError(e.to_string()))?;
+
+    let public_key = keys.public().encode_protobuf();
+    let signature = keys.sign(message.as_bytes())
+        .map_err(|e| TrackerError::ParseError(e.to_string()))?;
+
+    let request_body = serde_json::json!({
+        "public_key": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &public_key),
+        "message": message,
+        "signature": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &signature),
+    });
 
     let url = format!("http://{}/register", http_tracker_domain);
-    let response = client.post(&url).json(&signed).send().await
+    let response = client.post(&url).json(&request_body).send().await
         .map_err(|e| TrackerError::ConnectionFailed(e.to_string()))?;
 
     if response.status().is_success() {
