@@ -17,13 +17,44 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::network::{Client, UiClientRequestRequiringDial};
+use crate::network::{Client, UiClientRequestRequiringDial, RELAY_ADDR, HTTP_TRACKER};
+
+#[derive(Debug)]
+struct Args {
+    relay_addr: Option<String>,
+    http_tracker: Option<String>,
+}
+
+fn parse_args() -> Args {
+    let mut args = Args {
+        relay_addr: None,
+        http_tracker: None,
+    };
+
+    let mut iter = std::env::args().skip(1);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "-r" => {
+                args.relay_addr = iter.next();
+            }
+            "-t" => {
+                args.http_tracker = iter.next();
+            }
+            _ => {}
+        }
+    }
+
+    args
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .init();
     create_project_dirs().unwrap();
+
+    let args = parse_args();
 
     // let sqlite = Arc::new(
     //     tokio_rusqlite::Connection::open(get_save_file_path(SaveFile::Database))
@@ -64,11 +95,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let settings = Arc::new(settings);
     // TODO: If this fails also write a CriticalFailure
+    let relay_addr = args.relay_addr.as_deref().unwrap_or(RELAY_ADDR);
+    let http_tracker = args.http_tracker.as_deref().unwrap_or(HTTP_TRACKER);
+
     let (event_loop, mut client, buffered) = network::new(
         sqlite.clone(),
         settings.clone(),
         api_writer_tx.clone(),
         request_map.clone(),
+        relay_addr,
+        http_tracker,
     )
     .await?;
 

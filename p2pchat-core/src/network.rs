@@ -85,6 +85,8 @@ pub(crate) async fn new(
     settings: Arc<HashMap<SettingName, SettingValue>>,
     api_writer_tx: UnboundedSender<WriteEvent>,
     request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>,
+    relay_addr: &str,
+    http_tracker: &str,
 ) -> anyhow::Result<(EventLoop, Client, Vec<SwarmEvent<BehaviourEvent>>)> {
     // TODO: Confiugre properly & handle errors
 
@@ -168,16 +170,16 @@ pub(crate) async fn new(
     }
     // dial relay
     let mut relay_connections = Vec::new();
-    let relay_addr = Multiaddr::from_str(RELAY_ADDR)?;
-    let res = swarm.dial(relay_addr.clone());
+    let relay_multiaddr = Multiaddr::from_str(relay_addr)?;
+    let res = swarm.dial(relay_multiaddr.clone());
     match res {
         Ok(_) => {
             // Step 2: after connection, request a reservation (circuit relay listen)
-            let relay_reservation_addr = relay_addr
+            let relay_reservation_addr = relay_multiaddr
                 .clone()
                 .with(libp2p::multiaddr::Protocol::P2pCircuit); // appends /p2p-circuit
             swarm.listen_on(relay_reservation_addr); // TODO: !IMPORTANT! handle this error
-            relay_connections.push(relay_addr);
+            relay_connections.push(relay_multiaddr);
         }
         Err(e) => {
             tracing::error!("Failed to dial relay: {e}");
@@ -196,6 +198,7 @@ pub(crate) async fn new(
         keys: id.clone(),
         id: PeerId::from_public_key(&id.public()),
         request_map: request_map.clone(), //TODO: Maybe remove cuz not using it
+        http_tracker: http_tracker.to_string(),
     };
     let event_loop = EventLoop {
         swarm,
@@ -243,6 +246,7 @@ pub(crate) struct Client {
     keys: Keypair,
     pub id: PeerId,
     request_map: Arc<DashMap<OutboundRequestId, UiClientEventId>>,
+    pub http_tracker: String,
 }
 impl Client {
     pub async fn dial(&self, peer_id: PeerId, req_id: Uuid) {

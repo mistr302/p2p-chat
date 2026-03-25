@@ -9,7 +9,7 @@ use crate::{
         get_pending_friend_requests, insert_friend, insert_friend_request,
     },
     network::{
-        Client, CommandType, EventLoop, HTTP_TRACKER, UiClientRequestRequiringDial, signable::sign,
+        Client, CommandType, EventLoop, UiClientRequestRequiringDial, signable::sign,
     },
 };
 
@@ -116,7 +116,7 @@ impl EventLoop {
                 self.request_map.insert(id, crate::UiClientEventId(req_id));
             }
             FriendCommand::SearchPeer { id } => {
-                let url = format!("http://{}/find-by-id?q={}", HTTP_TRACKER, id);
+                let url = format!("http://{}/find-by-id?q={}", self.client.http_tracker, id);
                 match self.reqwest_client.get(&url).send().await {
                     Ok(response) => {
                         if response.status().is_success() {
@@ -168,7 +168,7 @@ impl EventLoop {
                 }
             }
             FriendCommand::SearchUsername { username } => {
-                let url = format!("http://{}/find-by-name?q={}", HTTP_TRACKER, username);
+                let url = format!("http://{}/find-by-name?q={}", self.client.http_tracker, username);
                 match self.reqwest_client.get(&url).send().await {
                     Ok(response) => {
                         if response.status().is_success() {
@@ -235,7 +235,7 @@ impl EventLoop {
                 }
             }
             FriendCommand::CheckUsernameAvailability { username } => {
-                let url = format!("http://{}/find-by-name?q={}", HTTP_TRACKER, username);
+                let url = format!("http://{}/find-by-name?q={}", self.client.http_tracker, username);
                 match self.reqwest_client.get(&url).send().await {
                     Ok(response) => {
                         if response.status().is_success() {
@@ -307,7 +307,7 @@ impl EventLoop {
                 let payload = UsernamePayload { username };
                 let signed = sign(payload, &self.keys);
 
-                let url = format!("http://{}/register", HTTP_TRACKER);
+                let url = format!("http://{}/register", self.client.http_tracker);
                 match self.reqwest_client.post(&url).json(&signed).send().await {
                     Ok(response) => {
                         if response.status().is_success() {
