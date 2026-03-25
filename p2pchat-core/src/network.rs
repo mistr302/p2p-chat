@@ -4,7 +4,9 @@ use futures::StreamExt;
 use libp2p::{
     Multiaddr, PeerId, StreamProtocol, Swarm, dcutr,
     identity::Keypair,
-    mdns, noise,
+    mdns,
+    multiaddr::Protocol,
+    noise,
     request_response::{self, OutboundRequestId, ProtocolSupport},
     swarm::{
         NetworkBehaviour, SwarmEvent,
@@ -168,29 +170,71 @@ pub(crate) async fn new(
             }
         }
     }
-    // dial relay
-    let mut relay_connections = Vec::new();
-    let relay_multiaddr = Multiaddr::from_str(relay_addr)?;
-    let res = swarm.dial(relay_multiaddr.clone());
-    match res {
-        Ok(_) => {
-            // Step 2: after connection, request a reservation (circuit relay listen)
-            let relay_reservation_addr = relay_multiaddr
-                .clone()
-                .with(libp2p::multiaddr::Protocol::P2pCircuit); // appends /p2p-circuit
-            swarm.listen_on(relay_reservation_addr); // TODO: !IMPORTANT! handle this error
-            relay_connections.push(relay_multiaddr);
-        }
-        Err(e) => {
-            tracing::error!("Failed to dial relay: {e}");
-            api_writer_tx
-                .send(WriteEvent::RelayServerConnection(
-                    RelayServerConnectionEvent(Err(RelayConnectionError::DialError)),
-                ))
-                .expect("to send");
-        }
-    }
 
+    // Connect to the relay server. Not for the reservation or relayed connection, but to (a) learn
+    // our local public address and (b) enable a freshly started relay to learn its public address.
+
+    let relay_addr = Multiaddr::from_str(relay_addr).unwrap();
+    swarm.dial(relay_addr.clone()).unwrap();
+    futures::executor::block_on(async {
+        let mut learned_observed_addr = false;
+        let mut told_relay_observed_addr = false;
+
+        loop {
+            match swarm.next().await.unwrap() {
+                SwarmEvent::NewListenAddr { .. } => {}
+                SwarmEvent::Dialing { .. } => {}
+                SwarmEvent::ConnectionEstablished { .. } => {}
+                SwarmEvent::Behaviour(BehaviourEvent::Identify(
+                    libp2p::identify::Event::Sent { .. },
+                )) => {
+                    tracing::info!("Told relay its public address");
+                    told_relay_observed_addr = true;
+                }
+                SwarmEvent::Behaviour(BehaviourEvent::Identify(
+                    libp2p::identify::Event::Received {
+                        info: libp2p::identify::Info { observed_addr, .. },
+                        ..
+                    },
+                )) => {
+                    tracing::info!(address=%observed_addr, "Relay told us our observed address");
+                    learned_observed_addr = true;
+                }
+                event => panic!("{event:?}"),
+            }
+
+            if learned_observed_addr && told_relay_observed_addr {
+                break;
+            }
+        }
+    });
+    swarm
+        .listen_on(relay_addr.with(Protocol::P2pCircuit))
+        .unwrap();
+
+    // // dial relay for identify protocol
+    // let mut relay_connections = Vec::new();
+    // let relay_multiaddr = Multiaddr::from_str(relay_addr)?;
+    // let res = swarm.dial(relay_multiaddr.clone());
+    // match res {
+    //     Ok(_) => {
+    //         // Step 2: after connection, request a reservation (circuit relay listen)
+    //         let relay_reservation_addr = relay_multiaddr
+    //             .clone()
+    //             .with(libp2p::multiaddr::Protocol::P2pCircuit); // appends /p2p-circuit
+    //         swarm.listen_on(relay_reservation_addr); // TODO: !IMPORTANT! handle this error
+    //         relay_connections.push(relay_multiaddr);
+    //     }
+    //     Err(e) => {
+    //         tracing::error!("Failed to dial relay: {e}");
+    //         api_writer_tx
+    //             .send(WriteEvent::RelayServerConnection(
+    //                 RelayServerConnectionEvent(Err(RelayConnectionError::DialError)),
+    //             ))
+    //             .expect("to send");
+    //     }
+    // }
+    let relay_connections = vec![];
     let (command_tx, command_rx) = mpsc::channel(100);
     let client = Client {
         settings: settings.clone(),
