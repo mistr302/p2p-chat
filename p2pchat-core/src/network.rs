@@ -364,7 +364,18 @@ impl EventLoop {
                                 .call(move |c| insert_contact(c, peer_id.to_string()))
                                 .await;
                             match res {
-                                Ok(_) => self.client.request_name(peer_id).await,
+                                Ok(_) => {
+                                    self.client.request_name(peer_id).await;
+
+                                    // TODO: bruh im actually ashamed of ts
+                                    self.client.buffer_event(UiClientRequestRequiringDial {
+                                        id: Uuid::new_v4(),
+                                        event: UiClientEventRequiringDial {
+                                            peer_id: peer_id.to_string(),
+                                            event: p2pchat_types::api::UiClientEventRequiringDialMessage::ResolveName,
+                                        }
+                                    }).await;
+                                }
                                 Err(e) => tracing::info!("{e}"),
                             }
                             self.api_writer_tx

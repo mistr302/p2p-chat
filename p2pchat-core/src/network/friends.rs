@@ -8,7 +8,9 @@ use crate::{
         delete_friend_request, get_friends, get_incoming_friend_requests,
         get_pending_friend_requests, insert_friend, insert_friend_request,
     },
-    network::{Client, CommandType, EventLoop, HTTP_TRACKER, signable::sign},
+    network::{
+        Client, CommandType, EventLoop, HTTP_TRACKER, UiClientRequestRequiringDial, signable::sign,
+    },
 };
 
 #[derive(Debug, Serialize, Deserialize)]

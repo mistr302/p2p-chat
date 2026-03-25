@@ -136,6 +136,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 async fn resolve_event_req_dial(ev: UiClientEventRequiringDial, id: Uuid, client: &mut Client) {
     match ev.event {
+        UiClientEventRequiringDialMessage::ResolveName => {
+            client
+                .request_name(PeerId::from_str(&ev.peer_id).unwrap())
+                .await;
+        }
+
         UiClientEventRequiringDialMessage::SendMessage { peer_id, message } => {
             client
                 .send_message(PeerId::from_str(&peer_id).unwrap(), message, id)

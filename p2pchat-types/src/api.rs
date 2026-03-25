@@ -13,6 +13,7 @@ pub struct UiClientEventRequiringDial {
 }
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub enum UiClientEventRequiringDialMessage {
+    ResolveName,
     SendMessage { peer_id: String, message: String },
     SendFriendRequest { peer_id: String },
     AcceptFriendRequest { peer_id: String },
