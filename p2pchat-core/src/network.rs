@@ -61,6 +61,7 @@ pub mod signable;
 pub mod types;
 // TODO: !IMPORTANT! Add the relay addr
 pub static RELAY_ADDR: &str = "127.0.0.1:6969";
+
 pub enum CommandType {
     ChatCommand(ChatCommand),
     FriendCommand(FriendCommand),

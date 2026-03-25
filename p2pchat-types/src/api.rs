@@ -25,8 +25,6 @@ pub enum UiClientEvent {
     EventRequiringDial(UiClientEventRequiringDial),
     SearchUsername { username: String },
     SearchPeer { peer_id: String },
-    CheckUsernameAvailability { username: String },
-    ChangeUsername { username: String },
     LoadChatlogPage { channel_id: i64, page: usize },
     LoadFriends,
     LoadPendingFriendRequests,
