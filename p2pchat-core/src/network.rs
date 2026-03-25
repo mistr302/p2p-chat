@@ -45,6 +45,7 @@ use p2pchat_types::{
     },
     settings::{SettingName, SettingValue},
 };
+#[derive(Debug)]
 pub struct UiClientRequestRequiringDial {
     pub event: UiClientEventRequiringDial,
     pub id: Uuid,
@@ -312,8 +313,10 @@ impl EventLoop {
         }
     }
     async fn dial_peer(&mut self, peer_id: PeerId) {
+        tracing::info!("dialing peer {peer_id}");
         // attempt to dial as a known peer
         let _res = self.swarm.dial(peer_id);
+        tracing::info!("{:?}", _res);
         // dial over the  relay
         for conn in self.relay_connections.lock().await.iter() {
             // TODO: this could be a bit too much to dial every relay just for one
@@ -335,8 +338,11 @@ impl EventLoop {
         match event {
             SwarmEvent::Behaviour(BehaviourEvent::Mdns(mdns::Event::Discovered(list))) => {
                 let mut known = Vec::<PeerId>::new();
-                for (peer_id, _multiaddr) in list {
-                    tracing::info!("{peer_id} peer connected!");
+                for (peer_id, multiaddr) in list {
+                    tracing::info!("{peer_id} peer connected at {multiaddr}!");
+                    // Add the discovered address to the swarm's address book
+                    self.swarm.add_peer_address(peer_id, multiaddr);
+
                     // TODO: implement known as a map
                     if !known.contains(&peer_id) {
                         known.push(peer_id);
@@ -390,13 +396,13 @@ impl EventLoop {
                 }
             }
             SwarmEvent::Behaviour(BehaviourEvent::Mdns(mdns::Event::Expired(list))) => {
-                for (peer_id, _multiaddr) in list {
+                for (peer_id, multiaddr) in list {
                     self.api_writer_tx
                         .send(WriteEvent::MdnsPeerDisconnected {
                             peer_id: peer_id.to_string(),
                         })
                         .expect("receiver not to be dropped");
-                    tracing::info!("{peer_id} expired mDNS");
+                    tracing::info!("{peer_id} expired mDNS, removed {multiaddr}");
                 }
             }
             SwarmEvent::NewListenAddr { address, .. } => {
@@ -414,6 +420,7 @@ impl EventLoop {
                 // TODO: flush the requests
                 if let Some(requests) = self.request_buffer.remove(&peer_id) {
                     for req in requests {
+                        tracing::info!("Flushing request: {:?}", req);
                         crate::resolve_event_req_dial(req.event, req.id, &mut self.client).await;
                     }
                 }
