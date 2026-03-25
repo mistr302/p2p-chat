@@ -3,8 +3,8 @@ use p2pchat_types::signable::sign;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TrackerError {
-    #[error("Request failed: {0}")]
-    RequestFailed(#[from] reqwest::Error),
+    #[error("Connection failed: {0}")]
+    ConnectionFailed(String),
     #[error("Username not available")]
     UsernameNotAvailable,
     #[error("Username not found")]
@@ -21,7 +21,8 @@ pub async fn check_username_availability(
     http_tracker_domain: String,
 ) -> Result<bool, TrackerError> {
     let url = format!("http://{}/find-by-name?q={}", http_tracker_domain, username);
-    let response = client.get(&url).send().await?;
+    let response = client.get(&url).send().await
+        .map_err(|e| TrackerError::ConnectionFailed(e.to_string()))?;
 
     if response.status().is_success() {
         // Username exists, so it's NOT available
@@ -44,7 +45,8 @@ pub async fn register_username(
     let signed = sign(payload, keys);
 
     let url = format!("http://{}/register", http_tracker_domain);
-    let response = client.post(&url).json(&signed).send().await?;
+    let response = client.post(&url).json(&signed).send().await
+        .map_err(|e| TrackerError::ConnectionFailed(e.to_string()))?;
 
     if response.status().is_success() {
         response

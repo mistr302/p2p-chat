@@ -1,3 +1,5 @@
+mod tracker;
+
 use std::collections::HashMap;
 use std::io;
 
@@ -8,6 +10,7 @@ use crossterm::terminal::{
 use p2pchat_types::settings::{
     SettingInput, SettingName, SettingValue, Settings, create_project_dirs, setting_definitions,
 };
+use p2pchat_types::HTTP_TRACKER;
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
@@ -41,10 +44,14 @@ struct SetupApp {
     focus: Focus,
     should_quit: bool,
     should_save: bool,
+    http_tracker: String,
+    reqwest_client: reqwest::Client,
+    keypair: Option<p2pchat_types::Keypair>,
+    username_status: Option<String>, // Shows availability or error message
 }
 
 impl SetupApp {
-    fn new() -> Self {
+    fn new(http_tracker: String) -> Self {
         let existing = Settings::load().ok();
 
         let fields: Vec<SettingField> = setting_definitions()
@@ -77,6 +84,21 @@ impl SetupApp {
             })
             .collect();
 
+        // Load or generate keypair
+        let keypair = existing
+            .as_ref()
+            .and_then(|s| s.get(&SettingName::KeyPair))
+            .and_then(|v| {
+                if let SettingValue::String(Some(key)) = v {
+                    p2pchat_types::Keypair::from_protobuf_encoding(
+                        &base64::Engine::decode(&base64::engine::general_purpose::STANDARD, key).ok()?,
+                    )
+                    .ok()
+                } else {
+                    None
+                }
+            });
+
         let focus = if fields.is_empty() {
             Focus::SaveButton
         } else {
@@ -88,6 +110,10 @@ impl SetupApp {
             focus,
             should_quit: false,
             should_save: false,
+            http_tracker,
+            reqwest_client: reqwest::Client::new(),
+            keypair,
+            username_status: None,
         }
     }
 
@@ -142,7 +168,7 @@ impl SetupApp {
         }
     }
 
-    fn handle_enter(&mut self) {
+    async fn handle_enter_async(&mut self) {
         match self.focus {
             Focus::Setting(i) => {
                 let field = &mut self.fields[i];
@@ -150,8 +176,38 @@ impl SetupApp {
                     // Generate new value
                     if let Some(generator) = field.generator {
                         if let SettingValue::String(Some(val)) = generator() {
-                            field.value = val;
+                            field.value = val.clone();
+                            // Update keypair if this is the KeyPair field
+                            if field.name == SettingName::KeyPair {
+                                self.keypair = p2pchat_types::Keypair::from_protobuf_encoding(
+                                    &base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &val).ok().unwrap_or_default(),
+                                )
+                                .ok();
+                            }
                         }
+                    }
+                } else if field.name == SettingName::Name && !field.value.is_empty() {
+                    // Register username when pressing Enter on Name field
+                    if let Some(ref keypair) = self.keypair {
+                        self.username_status = Some("Registering...".to_string());
+                        match tracker::register_username(
+                            &self.reqwest_client,
+                            keypair,
+                            self.http_tracker.clone(),
+                            field.value.clone(),
+                        )
+                        .await
+                        {
+                            Ok(_) => {
+                                self.username_status = Some("✓ Registered!".to_string());
+                                self.next_focus();
+                            }
+                            Err(e) => {
+                                self.username_status = Some(format!("✗ Error: {}", e));
+                            }
+                        }
+                    } else {
+                        self.username_status = Some("✗ Please generate a private key first".to_string());
                     }
                 } else {
                     self.next_focus();
@@ -163,6 +219,34 @@ impl SetupApp {
             }
             Focus::CancelButton => {
                 self.should_quit = true;
+            }
+        }
+    }
+
+    async fn check_username_async(&mut self) {
+        if let Focus::Setting(i) = self.focus {
+            let field = &self.fields[i];
+            if field.name == SettingName::Name && !field.value.is_empty() {
+                self.username_status = Some("Checking...".to_string());
+                match tracker::check_username_availability(
+                    &self.reqwest_client,
+                    field.value.clone(),
+                    self.http_tracker.clone(),
+                )
+                .await
+                {
+                    Ok(true) => {
+                        self.username_status = Some("✓ Available".to_string());
+                    }
+                    Ok(false) => {
+                        self.username_status = Some("✗ Not available".to_string());
+                    }
+                    Err(e) => {
+                        self.username_status = Some(format!("✗ {}", e));
+                    }
+                }
+            } else if field.name == SettingName::Name && field.value.is_empty() {
+                self.username_status = None;
             }
         }
     }
@@ -241,7 +325,12 @@ fn draw(f: &mut ratatui::Frame, app: &SetupApp) {
         let is_focused = app.focus == Focus::Setting(i);
         match field.setting_type {
             SettingType::HumanInput => {
-                draw_input_field(f, chunks[i], field.label, &field.value, is_focused);
+                let status = if field.name == SettingName::Name {
+                    app.username_status.as_deref()
+                } else {
+                    None
+                };
+                draw_input_field(f, chunks[i], field.label, &field.value, is_focused, status);
                 if is_focused {
                     let cursor_x = chunks[i].x + field.value.len() as u16 + 1;
                     let cursor_y = chunks[i].y + 1;
@@ -259,12 +348,24 @@ fn draw(f: &mut ratatui::Frame, app: &SetupApp) {
     draw_buttons(f, button_area, app.focus);
 }
 
-fn draw_input_field(f: &mut ratatui::Frame, area: Rect, label: &str, value: &str, focused: bool) {
+fn draw_input_field(
+    f: &mut ratatui::Frame,
+    area: Rect,
+    label: &str,
+    value: &str,
+    focused: bool,
+    status: Option<&str>,
+) {
     let border_style = if focused {
         Style::default().fg(Color::Yellow)
     } else {
         Style::default().fg(Color::White)
     };
+
+    let mut title = format!(" {} ", label);
+    if let Some(status_text) = status {
+        title.push_str(&format!(" - {}", status_text));
+    }
 
     let display_text = if value.is_empty() && !focused {
         Span::styled("Enter value...", Style::default().fg(Color::DarkGray))
@@ -276,7 +377,7 @@ fn draw_input_field(f: &mut ratatui::Frame, area: Rect, label: &str, value: &str
         Block::default()
             .borders(Borders::ALL)
             .border_style(border_style)
-            .title(format!(" {} ", label)),
+            .title(title),
     );
 
     f.render_widget(input, area);
@@ -393,14 +494,26 @@ fn draw_buttons(f: &mut ratatui::Frame, area: Rect, focus: Focus) {
     f.render_widget(cancel_button, button_chunks[3]);
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Parse arguments
+    let mut http_tracker = HTTP_TRACKER.to_string();
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "-t" {
+            if let Some(tracker) = args.next() {
+                http_tracker = tracker;
+            }
+        }
+    }
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     crossterm::execute!(stdout, EnterAlternateScreen)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = SetupApp::new();
+    let mut app = SetupApp::new(http_tracker);
 
     loop {
         terminal.draw(|f| draw(f, &app))?;
@@ -419,9 +532,12 @@ fn main() -> anyhow::Result<()> {
                 }
                 KeyCode::Tab | KeyCode::Down => app.next_focus(),
                 KeyCode::BackTab | KeyCode::Up => app.prev_focus(),
-                KeyCode::Enter => app.handle_enter(),
+                KeyCode::Enter => app.handle_enter_async().await,
                 KeyCode::Backspace => app.handle_backspace(),
-                KeyCode::Char(c) => app.handle_char(c),
+                KeyCode::Char(c) => {
+                    app.handle_char(c);
+                    app.check_username_async().await;
+                },
                 _ => {}
             }
         }
