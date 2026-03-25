@@ -421,7 +421,7 @@ impl EventLoop {
                     // We don't need to manually remove addresses
 
                     self.api_writer_tx
-                        .send(WriteEvent::MdnsPeerDisconnected {
+                        .send(WriteEvent::PeerDisconnected {
                             peer_id: peer_id.to_string(),
                         })
                         .expect("receiver not to be dropped");
@@ -432,6 +432,11 @@ impl EventLoop {
             }
             SwarmEvent::ConnectionClosed { peer_id, .. } => {
                 tracing::info!("Connection closed with peer: {peer_id}");
+                self.api_writer_tx
+                    .send(WriteEvent::PeerDisconnected {
+                        peer_id: peer_id.to_string(),
+                    })
+                    .expect("receiver not to be dropped");
             }
             SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
                 tracing::error!("Outgoing connection error to peer {:?}: {error:?}", peer_id);
