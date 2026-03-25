@@ -6,7 +6,7 @@ use libp2p::{
     identity::Keypair,
     mdns, noise,
     request_response::{self, OutboundRequestId, ProtocolSupport},
-    swarm::{NetworkBehaviour, SwarmEvent},
+    swarm::{NetworkBehaviour, SwarmEvent, dial_opts::{DialOpts, PeerCondition}},
     tcp, yamux,
 };
 use num_enum::TryFromPrimitive;
@@ -314,22 +314,32 @@ impl EventLoop {
     }
     async fn dial_peer(&mut self, peer_id: PeerId) {
         tracing::info!("dialing peer {peer_id}");
-        // attempt to dial as a known peer
-        let _res = self.swarm.dial(peer_id);
-        tracing::info!("{:?}", _res);
-        // dial over the  relay
+        // attempt to dial as a known peer with Disconnected condition
+        // This allows redialing when the peer was previously connected but is now disconnected
+        let opts = DialOpts::peer_id(peer_id)
+            .condition(PeerCondition::Disconnected)
+            .build();
+        let _res = self.swarm.dial(opts);
+        tracing::info!("Dial result: {:?}", _res);
+
+        // dial over the relay
         for conn in self.relay_connections.lock().await.iter() {
             // TODO: this could be a bit too much to dial every relay just for one
             // connection, use dht after
-            match self.swarm.dial(
-                conn.clone()
-                    .with(libp2p::multiaddr::Protocol::P2pCircuit)
-                    .with_p2p(peer_id)
-                    .unwrap(),
-            ) {
+            let relay_addr = conn.clone()
+                .with(libp2p::multiaddr::Protocol::P2pCircuit)
+                .with_p2p(peer_id)
+                .unwrap();
+
+            let relay_opts = DialOpts::peer_id(peer_id)
+                .addresses(vec![relay_addr.clone()])
+                .condition(PeerCondition::Disconnected)
+                .build();
+
+            match self.swarm.dial(relay_opts) {
                 Ok(_) => break, // TODO: this may be bs
                 Err(e) => {
-                    tracing::error!("failed to dial peer on relay: {conn}");
+                    tracing::error!("failed to dial peer on relay: {conn}, error: {e:?}");
                 }
             }
         }
