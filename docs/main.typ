@@ -108,39 +108,84 @@ Michal Stránský
 ]
 ]
 #pagebreak()
+
 #outline(title: heading(depth: 1, numbering: none, outlined: false)[Obsah])
 #pagebreak()
 #heading(numbering: none, outlined: false)[
 Poděkování
 ]
+Moc děkuji panu Ing. Drvotovi za užitečné rady. // TODO
+#super-heading[Anotace]
+Cílem této práce je vytvořit komunikační aplikaci, která zajišťuje bezpečnost a soukromí při zasílání zpráv mezi uživateli, pomocí decentralizace.
+V ideálním případě, komunikují uživatelé napřímo mezi sebou, nebo v horším přes relay, kdy relay server slouží jako prostředník a přenáší zprávy mezi uživately, ale nemůže je číst
+
+#super-heading[Klíčová slova]
+networking, peer-to-peer, p2p, decentralization, tui, cli, chat, libp2p, rust, async
+#super-heading[Abstract]
+The goal of this project is to create a messaging app that ensures security and privacy when users send messages to one another through decentralization.
+Ideally, users communicate directly with one another; otherwise, they communicate via a relay, where the relay server acts as an intermediary and transmits messages between users but cannot read them.
+
+#pagebreak()
 = Úvod
 Cílem této práce je vytvořit komunikační aplikaci, která zajišťuje bezpečnost a soukromí při zasílání zpráv mezi uživateli, pomocí decentralizace.
-V ideálním případě, komunikují uživatelé napřímo mezi sebou, nebo v horším přes RelayedConnection, kdy relay server slouží jako prostředník a přenáší zprávy mezi uživately
+V ideálním případě, komunikují uživatelé napřímo mezi sebou, nebo v horším přes relay, kdy relay server slouží jako prostředník a přenáší zprávy mezi uživately, ale nemůže je číst
+
+== Postup vývoje
++ Analytická fáze: rešerše podobných existujících platforem a analýza jejich provedení.
++ Návrhová fáze: vytvoření architektury aplikace, návrhu databázového schématu a uživatelského rozhraní.
++ Implementace: programování aplikace v programovacím jazyce Rust za použití Tokio asynchronous runtime a závislých balíčků, lokálního databázového uložiště SQLite.
++ Testování: ověřování funkčnosti aplikace.
+
 == Aplikace se zkládá z čtyřech hlavních částí:
+
 === p2pchat-core 
-// TODO
+Backendový daemon, který řeší vše ohledně ukládání zpráv, kontaktů, přátel a síťových eventů
+
 === p2pchat-relay
-// TODO
+Relay server, na který se uživatelé připojují pro WAN komunikaci
+
 === p2pchat-http
-// TODO
+HTTP server, přes který si uživatelé registrují uživatelská jména k jejich decentralizované identitě PeerId, pomocí které se dají následně provolat přes relay
+
 === p2pchat-tui
-// TODO
-//
-== Problém
+Uživatelské rozhraní pro komunikaci s p2pchat-core
+
+= Pozadí a analýza existujících řešení
+
+== Problém a motivace
 Aplikace má za cíl řešit problém ochrany soukromí při odesílání zpráv, které by mohly být čteny poskytovateli centralizovaných chatovacích aplikací, a uchovávání metadat, například kdy komunikujete s kým.
-== Motivace
-== Technologie
-Hlavní technologie použité k vytvoření aplikace:
+
+== Stávající chatovací systémy s podobným účelem, ale jiným zpracováním
+
+=== Matrix
+- open-source
+- každý může hostovat server který se zapojuje do decentralizovaného systému serverů, uživatelé komunikují pomocí těchto serverů //TODO
+
+=== Keet by HolePunch 
+- není open-source
+- nemá implementaci persistant message storage přes DHT, tudíž přenos zpráv může proběhnout pouze když jsou oba uživatelé přístupní
+
+=== Signal
+- open-source
+- centralizovaný, šifrovaný end-to-end
+
+= Použité Technologie
+== Technologie k samostatnému vytvoření aplikace
 === Rust
-Rust je moderní systémový programovací jazyk navržený s ohledem na výkon, spolehlivost a bezpečnost paměti. Původně jej vyvinula společnost Mozilla a jeho cílem je poskytnout vývojářům nízkoúrovňovou kontrolu podobnou jazykům C nebo C++, avšak bez běžných chyb, jako je odkazování na nulový ukazatel. Rust zajišťuje bezpečnost paměti bez použití garbage collectoru díky svému jedinečnému systému vlastnictví a zapůjčování. Klade také důraz na souběžnost, což vývojářům pomáhá psát bezpečné vícevláknové programy bez datových konfliktů. Celkově si Rust klade za cíl kombinovat rychlost, bezpečnost a produktivitu vývojářů při vytváření všeho od operačních systémů po webové aplikace.
+Rust je moderní systémový programovací jazyk navržený s ohledem na výkon, spolehlivost a bezpečnost paměti. Původně jej vyvinula společnost Mozilla a jeho cílem je poskytnout vývojářům nízkoúrovňovou kontrolu podobnou jazykům C nebo C++, avšak bez běžných chyb, jako je odkazování na nulový ukazatel. Rust zajišťuje bezpečnost paměti bez použití garbage collectoru díky svému jedinečnému systému vlastnictví a zapůjčování. Klade také důraz na souběžnost, což vývojářům pomáhá psát bezpečné vícevláknové programy bez datových konfliktů.
+
 === LibP2P(rust-libp2p)
-libp2p je modulární síťová knihovna určená k vytváření peer-to-peer aplikací flexibilním a škálovatelným způsobem. Vznikla v rámci ekosystému Protocol Labs a využívá se v projektech, jako je IPFS. libp2p poskytuje základní stavební kameny pro síťové připojení, včetně transportních protokolů, vyhledávání uzlů, šifrování a multiplexování. Umožňuje vývojářům přizpůsobit způsob, jakým se uzly připojují a komunikují, aniž by byli závislí na centralizovaných serverech. Celkově si libp2p klade za cíl umožnit decentralizované, odolné a interoperabilní síťové systémy.
+libp2p je modulární síťová knihovna určená k vytváření peer-to-peer aplikací flexibilním a škálovatelným způsobem. Vznikla v rámci ekosystému Protocol Labs a využívá se v projektech, jako je IPFS. libp2p poskytuje základní stavební kameny pro síťové připojení, včetně transportních protokolů, vyhledávání uzlů, šifrování a multiplexování. Umožňuje vývojářům přizpůsobit způsob, jakým se uzly připojují a komunikují, aniž by byli závislí na centralizovaných serverech.
+
 === Tokio (asynchronní runtime)
-Tokio je asynchronní runtime pro programovací jazyk Rust, určený k vývoji rychlých a škálovatelných síťových aplikací. Je vyvíjen v rámci projektu Tokio Project a poskytuje nástroje potřebné pro psaní neblokujícího kódu. Tokio obsahuje komponenty, jako je smyčka událostí, plánovač úloh a rozhraní API pro asynchronní vstup a výstup. Umožňuje vývojářům efektivně zpracovávat tisíce souběžných úloh bez blokování vláken. Celkově si Tokio klade za cíl usnadnit vývoj vysoce výkonných souběžných systémů v jazyce Rust.
+Tokio je asynchronní runtime pro programovací jazyk Rust, určený k vývoji rychlých a škálovatelných síťových aplikací. Je vyvíjen v rámci projektu Tokio Project a poskytuje nástroje potřebné pro psaní neblokujícího kódu. Tokio obsahuje komponenty, jako je smyčka událostí, plánovač úloh a rozhraní API pro asynchronní vstup a výstup. Umožňuje vývojářům efektivně zpracovávat tisíce souběžných úloh bez blokování vláken.
+
 === Ratatui (uživatelské rozhraní)
-Ratatui je knihovna pro jazyk Rust určená k vytváření bohatých uživatelských rozhraní v terminálu (TUI), která klade důraz na flexibilitu a výkon. Jedná se o komunitní odnož projektu tui-rs, na které se i nadále aktivně pracuje a vylepšuje se. Ratatui poskytuje widgety, systémy rozvržení a nástroje pro stylizaci, které umožňují vytvářet interaktivní textová rozhraní v terminálu. Dobře se integruje s asynchronními runtime prostředími, jako je Tokio, a umožňuje tak vytvářet responzivní aplikace. Celkově si Ratatui klade za cíl usnadnit navrhování moderních, uživatelsky přívětivých terminálových aplikací v Rustu.
-=== Sqlite
-SQLite je lightweight, samostatný systém pro správu relačních databází, navržený s důrazem na jednoduchost a efektivitu. Vytvořil jej D. Richard Hipp a je široce využíván v embedded systémech a aplikacích. Na rozdíl od tradičních databází nevyžaduje SQLite samostatný server, protože data ukládá přímo do jediného souboru na disku. Podporuje standardní funkce jazyka SQL a zároveň se vyznačuje malými nároky na paměť a vysokou spolehlivostí. Celkově si SQLite klade za cíl poskytnout snadno použitelné, přenositelné a bezkonfigurační databázové řešení.
+Ratatui je knihovna pro jazyk Rust určená k vytváření uživatelských rozhraní v terminálu (TUI), která klade důraz na flexibilitu a výkon. Jedná se o komunitní fork projektu tui-rs, na které se i nadále aktivně pracuje a vylepšuje se. Ratatui poskytuje widgety, systémy rozvržení a nástroje pro stylizaci, které umožňují vytvářet interaktivní textová rozhraní v terminálu. Dobře se integruje s asynchronními runtime prostředími, jako je Tokio, a umožňuje tak vytvářet responzivní aplikace. 
+
+=== Sqlite (tokio-rusqlite)
+SQLite je lightweight, samostatný systém pro správu relačních databází, navržený s důrazem na jednoduchost a efektivitu. Vytvořil jej D. Richard Hipp a je široce využíván v embedded systémech a aplikacích. Na rozdíl od tradičních databází nevyžaduje SQLite samostatný server, protože data ukládá přímo do jediného souboru na disku. Podporuje standardní funkce jazyka SQL a zároveň se vyznačuje malými nároky na paměť a vysokou spolehlivostí. 
+
 // Lightweight serverless databázové uložiště.
 // Funguje jako normální relační databáze.
 // Ukládá se jako soubor nebo může být pouze in-memory
@@ -148,66 +193,30 @@ SQLite je lightweight, samostatný systém pro správu relačních databází, n
 // === QUIC (hlavní transport protokol)
 // === Http tracker server
 === Nix
-Nix je systém pro sestavování a správu balíčků určený k reprodukovatelnému a deklarativnímu sestavování softwaru. Vyvíjí jej nadace NixOS Foundation a tvoří ústřední prvek ekosystému NixOS. Nix využívá čistě funkcionální přístup, v němž jsou výstupy sestavení určovány výhradně vstupy, což zaručuje konzistentní výsledky napříč různými prostředími. Izoluje závislosti, aby se předešlo konfliktům, a umožňuje souběžnou existenci více verzí balíčků. Celkově si Nix klade za cíl poskytovat spolehlivá, opakovatelná a snadno sdíletelná vývojová a nasazovací prostředí.
-
-== Klíčové vlastnosti
-- Konfigurovatelné TUI s ovládacími prvky podobným jako ve vimu
-- Zasílání šifrovaných zpráv napřímo nebo přes DHT(zatím neimplementováno)
-- něco
-
-== Postup vývoje
-+ Analytická fáze: rešerše podobných existujících platforem a analyzace jejich provedení.
-+ Návrhová fáze: vytvoření architektury aplikace, návrhu databázového schématu a uživatelského rozhraní.
-+ Implementace: programování aplikace v programovacím jazyce Rust za použití Tokio asynchronous runtime a závislých balíčků, lokálního databázového uložiště SQLite.
-+ Testování: ověřování funkčnosti aplikace.
-
-== Běh programu
-Program se nastaví dle konfiguračního souboru
-Poslouchá na UNIX_SOCKET /tmp/p2p-chat.sock
-Po navázání spojení, čte z UNIX_SOCKET UiClientEventy, dle kterých provolává uživatele, sqlite dotazy, http-tracker, ..
-Odpovědi na tyto eventy zárověň zapisuje na stejný socket, jako enum WriteEvent.
-Zapisuje také eventy, nezávislé na UiClientEvent, např. mDNS discover, IncomingMessage, DcutrConnection(hole-punch success) ..
-Také může nastat stav, kdy se nepodaří programu nastartovat, např. když se nepodaří načíst nastavení programu,
-v tomto příkladě zapíše WriteEvent::CriticalError a proces se ukončí.
-
-=== Provolání(Dial) vzdáleného uživatele
-- Pošleme dotaz na překlad jména na HTTP-tracker, který nám vrátí PeerId
-- Pošleme dotaz na CircuitRelay zda je tento uživatel připojený
-- Pokud ano pokusíme se navázat spojení
-- Pokud se vše povede, máme spojení přes Relay
-- V ideálním případě se nám podaří Dcutr, a mám přímé spojení, tudíž už nemusíme komunikovat přes Relay k tomuto uživateli
-
-= Systémové požadavky a omezení
-V současné době je aplikace určena pouze pro UNIX-like systémy (Linux, MacOS, BSD).
-Jde zkompilovat pomocí "cargo build", ale musíte mít nainstalované všechny závislosti definované v flake.nix
-Nebo jde vybuildit pomocí nix build systému pomocí příkazu: "nix build" nebo "nix run" pro spuštění 
-
-= Pozadí
-== Stávající chatovací systémy s podobným účelem, ale jiným zpracováním
-=== Matrix
-- open-source
-- každý může hostovat server který se zapojuje do decentralizovaného systému serverů, uživatelé komunikují pomocí těchto serverů //TODO
-=== Keet by HolePunch 
-- není open-source
-- nemá implementaci persistant message storage přes DHT, tudíž přenos zpráv může proběhnout pouze když jsou oba uživatelé přístupní
-== Protokoly
+Nix je systém pro sestavování a správu balíčků určený k reprodukovatelnému a deklarativnímu sestavování softwaru. Vyvíjí jej nadace NixOS Foundation a tvoří ústřední prvek ekosystému NixOS. Nix využívá čistě funkcionální přístup, v němž jsou výstupy sestavení určovány výhradně vstupy, což zaručuje konzistentní výsledky napříč různými prostředími. Izoluje závislosti, aby se předešlo konfliktům, a umožňuje souběžnou existenci více verzí balíčků. 
+== Protokoly použité k vytvoření aplikace
 === QUIC
 // TODO vysvetlit vlastnimy slovy
-QUIC je nový transportní protokol, který poskytuje vždy šifrované připojení s multiplexováním datových toků postavené na protokolu UDP.@libp2p-quic
+QUIC je nový transportní protokol, který poskytuje vždy šifrované připojení s multiplexováním datových toků postavené na protokolu UDP.
 
 QUIC je bezpečný transportní protokol pro všeobecné použití na aplikační vrstvě.
 
 Aplikační protokoly si vyměňují informace přes připojení QUIC prostřednictvím datových toků, které jsou uspořádan sekvence bajtů. 
 
-Připojení QUIC nejsou striktně vázána na jednu síťovou cestu. Migrace připojení používá identifikátory připojení, aby umožnila přenos připojení na novou síťovou cestu.@quicrfc
+Připojení QUIC nejsou striktně vázána na jednu síťovou cestu. Migrace připojení používá identifikátory připojení, aby umožnila přenos připojení na novou síťovou cestu.
+@quicrfc
+@libp2p-quic
 === TCP
 Transmission Control Protocol
 Přenos v segmentech, oproti QUIC(UDP), který je přenášen v datagramech.
 Pracuje na transportní vrstvě, je řešen přímo v kernelu.
 By default nepodporuje socket multiplexing. // TODO: yamux
+TODO
 // TODO
 === HTTPS
+TODO
 ==== TLS 1.3
+TODO
 === Noise (X25519)
 // TODO vysvetlit vlastnimy slovy
 Noise Protocol Framework je široce používaný šifrovací systém, který umožňuje bezpečnou komunikaci kombinováním kryptografických primitiv do vzorů s ověřitelnými bezpečnostními vlastnostmi.@libp2p-noise
@@ -258,23 +267,147 @@ Aby mDNS discovery mohl fungovat MUSÍ uzel odesílat své mDNS dotazy z
    ekvivalent FF02::FB).@mdnsrfc
 
 = Návrh aplikace
-Aplikace je navržena způsobem, aby mohli vývojáři postavit jakékoliv uživatelské rozhraní a napojit ho na API poskytované jádrem mojí aplikace pomocí UNIX socketů.
+== Architektura – přehled
+- Diagram: TUI ↔ Unix Socket ↔ p2pchat-core ↔ libp2p swarm ↔ peers
+- Workspace struktura (Cargo workspace se třemi crates) // TODO přidat relay-server
+  - `p2pchat-types` – sdílené typy, pro komunikaci s API
+  - `p2pchat-core` – backend daemon
+  - `tui` – frontend
+- Aplikace je navržena způsobem, aby mohli vývojáři postavit jakékoliv uživatelské rozhraní a napojit ho na API poskytované jádrem mojí aplikace pomocí UNIX socketů.
+
+== IPC komunikace (Unix Socket)
+- Protokol: length-prefixed event serializace
+- Typy zpráv z TUI do core: `UiClientRequest` / `UiClientEvent`
+- Typy zpráv z core do TUI: `WriteEvent`
+- Přehled klíčových eventů:
+  - SendMessage, LoadChatlogPage
+  - SendFriendRequest, AcceptFriendRequest, DenyFriendRequest
+  - SearchUsername, LoadFriends, LoadIncomingFriendRequests
+  - DiscoverMdnsContact, PeerDisconnected, RelayServerConnection
+
+== Databázové schéma (TODO: sem příjde diagram)
+- Tabulky a vztahy:
+  - `contacts` – PeerId, vazba na names a channel
+  - `names` – jméno s TTL (24 h), podporuje jména potvrzená centrálním serverem, nebo předané uživatelem
+  - `channels` – privátní kanály mezi uživateli 1:1
+  - `messages` – UUID, obsah, channel_id, created_at
+  - `friends` – potvrzená přátelství
+  - `pending_friend_requests` – čekající žádosti (incoming / outgoing)
+// - Migrace schématu při startu
+// TODO add schema image
+
+== Konfigurace a nastavení
+- Uložení: `~/.config/p2pchat/settings` ve formátu JSON
+- Povinné hodnoty: Name (username), KeyPair (Ed25519)
+- Databáze: `~/.local/share/p2pchat/db` (sqlite soubor)
+- Setup wizard (`setup` binary) – první spuštění, registrace jména 
+
+== Identita a kryptografie
+- Ed25519 klíčový pár jako identita uživatele 
+- PeerId odvozeno z veřejného klíče pomocí SHA256
+- Podpisování zpráv pro ověření autenticity (`signable.rs`)
+- HTTP tracker: registrace jména s podepsaným požadavkem
+
+== Klíčové vlastnosti
+- Konfigurovatelné TUI s ovládacími prvky podobným jako ve vimu
+- // TODO další věci
+
 = Implementace
-= Vlastnosti a funkce
-- Každý uživatel si nezávisle vede vlastní tabulky přátel, přijatých a odeslaných zpráv
+== p2pchat-core (backend daemon)
+- Vstupní bod `main.rs`: Unix socket server, dispatcher eventů
+- CLI argumenty: `-r` relay adresa, `-t` tracker adresa
+=== Síťová vrstva (`network.rs`)
+- Konfigurace libp2p Swarm (behavior stack)
+- EventLoop: zpracování swarm eventů a příkazů z TUI
+- Client: async API pro posílání příkazů do EventLoop
+- Buffering požadavků při nedostupnosti peera
+
+=== Protokoly
+- `/direct-message/1.0.0` – Request-Response protokol pro zprávy
+  - `DirectMessageRequest` (obsah zprávy)
+  - `MessageResponse` (Ack / NotFriends)
+- `/friends/1.0.0` – protokol pro správu přátelství
+  - `FriendRequest::AddFriend` – žádost o přátelství
+  - `FriendRequest::AcceptFriend { decision }` – přijetí/odmítnutí
+  - Přenos jména peera při mDNS discovery
+=== Databázová vrstva (`db/`)
+- CRUD operace pro contacts, messages, friends
+- Stránkování historie zpráv
+
+== tui/ (terminálové UI)
+- Dva binární cíle: `tui` (hlavní UI) a `setup` (wizard)
+
+=== Setup wizard (`setup.rs`)
+- Generování keypair při prvním spuštění
+- Zadání uživatelského jména
+- Kontrola dostupnosti jména přes HTTP tracker
+- Registrace jména podpisem přes HTTP tracker
+- Uložení nastavení
+
+=== Hlavní UI (`main.rs`, `ui.rs`)
+- Panel kontaktů (levý sidebar): mDNS peers, přátelé
+- Chat oblast: zobrazení zpráv, textový vstup
+- Friends záložka: vyhledávání, čekající žádosti, příchozí žádosti
+- Status bar: stav relay připojení, aktuální peer
+
+== HTTP Tracker klient (`tracker.rs`)
+- Registrace jména (POST s ed25519 podpisem)
+- Vyhledání jména (GET peer_id podle jména nebo naopak)
+- Kontrola dostupnosti jména
+
+== Běh programu
+Program se nastaví dle konfiguračního souboru
+Poslouchá na UNIX_SOCKET /tmp/p2p-chat.sock
+Po navázání spojení, čte z UNIX_SOCKET UiClientRequesty, dle kterých zasílá dotazy jiným uživatelům, sqlite dotazy, http-tracker, ..
+Odpovědi na tyto eventy zárověň zapisuje na stejný socket, jako enum WriteEvent.
+Zapisuje také eventy, nezávislé na UiClientRequest, např. mDNS discover, IncomingMessage, DcutrConnection(hole-punch success) ..
+Také může nastat stav, kdy se nepodaří programu nastartovat, např. když se nepodaří načíst nastavení programu,
+v tomto příkladě zapíše WriteEvent::CriticalError a proces se ukončí.
+
+=== Provolání(Dial) vzdáleného uživatele
+- Pošleme dotaz na překlad jména na HTTP-tracker, který nám vrátí PeerId
+- Pošleme dotaz na CircuitRelay zda je tento uživatel připojený
+- Pokud ano pokusíme se navázat spojení
+- Pokud se vše povede, máme spojení přes Relay
+- Následně se pokusíme o přímě spojení pomocí Dcutr
 
 = Bezpečnostní aspekty
-- Veškerá komunikace přes mDNS, Circuit Relay a přímá hole-punched komunikace je šifrovaná pomocí Noise protokolu
+Veškerá síťová komunikace v rámcí aplikace je šífrována pomocí Noise protokolu.
+Identita každého uživatele je vedena decentralizovaně pomocí PeerId, která je vygenerována multihash a base58 algoritmem se vstupem veřejného klíče uživatele.
+Ověření identity odesílatele zpráv je implementováno pomocí Ed25519 podpisů např. v registraci nového uživatelského jména na HTTP trackeru.
+Žádný centrální server nedrží zprávy ani metadata. 
+HTTP server jako takový je pouze HTTP a samostatně nepodporuje šifrování komunikace, šifrování HTTP komunikace přes TLS se řeší na úrovni hostingu nejčasteji použitím reverse-proxy služby jako Nginx, Caddy, atd.
+HTTP klient v p2pchat-core je schopný HTTPS šifrované komunikace. 
+- Omezení: relay server zná, kdo se připojuje (ale ne obsah zpráv)
+
+= Systémové požadavky a omezení
+V současné době je aplikace určena pouze pro UNIX-like systémy (Linux, MacOS, BSD).
+Požadavky pro úspěšnou kompilaci programu: Rust toolchain (edice 2024) s nainstalovanými závislostmi definovanými v souboru flake.nix nebo Nix package manager
+== Omezení
+K WAN komunikaci je třeba mít spuštěný relay a http tracker 
+// = Návrh aplikace
+// = Implementace
+// = Vlastnosti a funkce
+// - Každý uživatel si nezávisle vede vlastní tabulky přátel, přijatých a odeslaných zpráv
+
 = Výsledky, diskuse a omezení
-Stávající problémy, které je třeba vyřešit:
-- Ukládání zpráv pro peer, kteří se dlouho nepřipojí k DHT (Nebo použít gossipsub kde si přátelé předávají zprávy offline přátelům)
+Výsledkem projektu je aplikace s funkčním TUI prostředím, která umožňuje jednoduché spojení na LAN prostředí pomocí mDNS a zároveň vyhledávání vzdálených uživatelů a následné komunikování přes Relay nebo napřímo pomocí hole-punchingu.
+== Možné budoucí rozšíření projektu
+Současná aplikace funguje ve spolehlivě, avšak má několik nedostatků, které je třeba vyřešit. V současné verzi, není možné poslat zprávu, bez toho aby oba dva uživatelé byly dostupní. Tento jev, by byl možný vyřešit například implementací DHT(Distrubuted Hash Table) nebo gossipsub mezi společnými přáteli.
+V momentálním stavu aplikace neřeší a nepočítá s žádnými útoky, například náš HTTP tracker, může být obětí útoku Sybil, kde by útočník mohl zabrat velké množství jmen, jen tím že bude měnit svoji identitu// TODO
+- Ukládání zpráv pro peery pomocí DHT nebo gossipsub pro persistentní offline zprávy
+- Hlasový chat
+- Ukládání zpráv pro peery, kteří se dlouho nepřipojí k DHT (Nebo použít gossipsub kde si přátelé předávají zprávy offline přátelům)
 - Systém pro zpracování jmen peerů (odvození hash pro DHT Node ID?) nebo pomocí trackerů
 - atd.
-= Závěr a budoucí práce
-== Budoucí práce
-- hlasový chat
-- konfigurace swarmu a sítových eventů
-- 
+
+= Závěr
+TODO
+// = Závěr a budoucí práce
+// == Budoucí práce
+// - hlasový chat
+// - konfigurace swarmu a sítových eventů
+// - 
 
 #pagebreak()
 #bibliography("ref.bib")

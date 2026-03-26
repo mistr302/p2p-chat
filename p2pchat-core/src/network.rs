@@ -173,8 +173,8 @@ pub(crate) async fn new(
     // Connect to the relay server. Not for the reservation or relayed connection, but to (a) learn
     // our local public address and (b) enable a freshly started relay to learn its public address.
 
-    let relay_addr = Multiaddr::empty()
-        .with(Protocol::Ip4(Ipv4Addr::from_str(relay_addr).unwrap()))
+    let relay_addr = Multiaddr::from_str(relay_addr)
+        .unwrap()
         .with(Protocol::QuicV1);
     swarm.dial(relay_addr.clone()).unwrap();
     futures::executor::block_on(async {
@@ -209,9 +209,8 @@ pub(crate) async fn new(
             }
         }
     });
-    swarm
-        .listen_on(relay_addr.with(Protocol::P2pCircuit))
-        .unwrap();
+    // TODO: This is failing :sob:
+    let res = swarm.listen_on(relay_addr.with(Protocol::P2pCircuit));
 
     // // dial relay for identify protocol
     // let mut relay_connections = Vec::new();

@@ -18,6 +18,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
+use tokio::sync::oneshot;
 use tokio::time::Instant;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,6 +53,8 @@ struct SetupApp {
     username_status: Option<String>, // Shows availability or error message
     username_last_changed: Option<Instant>, // Track when username was last modified
     username_check_pending: bool, // Whether we need to check username availability
+    check_rx: Option<oneshot::Receiver<Result<bool, tracker::TrackerError>>>,
+    register_rx: Option<oneshot::Receiver<Result<p2pchat_types::RegisterResponse, tracker::TrackerError>>>,
 }
 
 impl SetupApp {
@@ -115,11 +118,16 @@ impl SetupApp {
             should_quit: false,
             should_save: false,
             http_tracker,
-            reqwest_client: reqwest::Client::new(),
+            reqwest_client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(5))
+                .build()
+                .unwrap_or_default(),
             keypair,
             username_status: None,
             username_last_changed: None,
             username_check_pending: false,
+            check_rx: None,
+            register_rx: None,
         }
     }
 
@@ -186,7 +194,7 @@ impl SetupApp {
         }
     }
 
-    async fn handle_enter_async(&mut self) {
+    fn handle_enter(&mut self) {
         match self.focus {
             Focus::Setting(i) => {
                 let field = &mut self.fields[i];
@@ -208,22 +216,16 @@ impl SetupApp {
                     // Register username when pressing Enter on Name field
                     if let Some(ref keypair) = self.keypair {
                         self.username_status = Some("Registering...".to_string());
-                        match tracker::register_username(
-                            &self.reqwest_client,
-                            keypair,
-                            self.http_tracker.clone(),
-                            field.value.clone(),
-                        )
-                        .await
-                        {
-                            Ok(_) => {
-                                self.username_status = Some("✓ Registered!".to_string());
-                                self.next_focus();
-                            }
-                            Err(e) => {
-                                self.username_status = Some(format!("✗ Error: {}", e));
-                            }
-                        }
+                        let (tx, rx) = oneshot::channel();
+                        let client = self.reqwest_client.clone();
+                        let keypair = keypair.clone();
+                        let tracker = self.http_tracker.clone();
+                        let username = field.value.clone();
+                        tokio::spawn(async move {
+                            let result = tracker::register_username(&client, &keypair, tracker, username).await;
+                            let _ = tx.send(result);
+                        });
+                        self.register_rx = Some(rx);
                     } else {
                         self.username_status = Some("✗ Please generate a private key first".to_string());
                     }
@@ -241,30 +243,67 @@ impl SetupApp {
         }
     }
 
-    async fn check_username_async(&mut self) {
+    fn spawn_username_check(&mut self) {
         if let Focus::Setting(i) = self.focus {
             let field = &self.fields[i];
             if field.name == SettingName::Name && !field.value.is_empty() {
                 self.username_status = Some("Checking...".to_string());
-                match tracker::check_username_availability(
-                    &self.reqwest_client,
-                    field.value.clone(),
-                    self.http_tracker.clone(),
-                )
-                .await
-                {
-                    Ok(true) => {
-                        self.username_status = Some("✓ Available".to_string());
-                    }
-                    Ok(false) => {
-                        self.username_status = Some("✗ Not available".to_string());
-                    }
-                    Err(e) => {
-                        self.username_status = Some(format!("✗ {}", e));
-                    }
-                }
+                let (tx, rx) = oneshot::channel();
+                let client = self.reqwest_client.clone();
+                let username = field.value.clone();
+                let tracker = self.http_tracker.clone();
+                tokio::spawn(async move {
+                    let result = tracker::check_username_availability(&client, username, tracker).await;
+                    let _ = tx.send(result);
+                });
+                self.check_rx = Some(rx);
             } else if field.name == SettingName::Name && field.value.is_empty() {
                 self.username_status = None;
+            }
+        }
+    }
+
+    fn poll_background_tasks(&mut self) {
+        // Poll username availability check
+        if let Some(ref mut rx) = self.check_rx {
+            match rx.try_recv() {
+                Ok(Ok(true)) => {
+                    self.username_status = Some("✓ Available".to_string());
+                    self.check_rx = None;
+                }
+                Ok(Ok(false)) => {
+                    self.username_status = Some("✗ Not available".to_string());
+                    self.check_rx = None;
+                }
+                Ok(Err(e)) => {
+                    self.username_status = Some(format!("✗ {}", e));
+                    self.check_rx = None;
+                }
+                Err(oneshot::error::TryRecvError::Empty) => {} // Still pending
+                Err(oneshot::error::TryRecvError::Closed) => {
+                    self.username_status = Some("✗ Check failed".to_string());
+                    self.check_rx = None;
+                }
+            }
+        }
+
+        // Poll username registration
+        if let Some(ref mut rx) = self.register_rx {
+            match rx.try_recv() {
+                Ok(Ok(_)) => {
+                    self.username_status = Some("✓ Registered!".to_string());
+                    self.next_focus();
+                    self.register_rx = None;
+                }
+                Ok(Err(e)) => {
+                    self.username_status = Some(format!("✗ Error: {}", e));
+                    self.register_rx = None;
+                }
+                Err(oneshot::error::TryRecvError::Empty) => {} // Still pending
+                Err(oneshot::error::TryRecvError::Closed) => {
+                    self.username_status = Some("✗ Registration failed".to_string());
+                    self.register_rx = None;
+                }
             }
         }
     }
@@ -540,12 +579,15 @@ async fn main() -> anyhow::Result<()> {
             break;
         }
 
+        // Poll background HTTP tasks (non-blocking)
+        app.poll_background_tasks();
+
         // Check if we need to perform username availability check
         if app.username_check_pending {
             if let Some(last_changed) = app.username_last_changed {
                 if last_changed.elapsed() >= Duration::from_secs(1) {
                     app.username_check_pending = false;
-                    app.check_username_async().await;
+                    app.spawn_username_check();
                 }
             }
         }
@@ -562,7 +604,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                     KeyCode::Tab | KeyCode::Down => app.next_focus(),
                     KeyCode::BackTab | KeyCode::Up => app.prev_focus(),
-                    KeyCode::Enter => app.handle_enter_async().await,
+                    KeyCode::Enter => app.handle_enter(),
                     KeyCode::Backspace => app.handle_backspace(),
                     KeyCode::Char(c) => {
                         app.handle_char(c);
