@@ -39,10 +39,9 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
 
 
-    channel_id TEXT NOT NULL,         
+    channel_id INTEGER NOT NULL,  -- TODO: changed from text to int check the sql_calls for potential errors       
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 
-    -- TODO: date column later, e.g.: created_at INTEGER or TEXT
     FOREIGN KEY (channel_id) REFERENCES channels(id)
 );
 
