@@ -4,6 +4,16 @@
 #let super-heading(body, size: 18pt) = {
     heading(depth: 1, numbering: none, outlined: false)[#text(size: size)[#body]]
 }
+#let h1(body, depth: 1, size: 18pt) = {
+    heading(depth: 1, numbering: none, outlined: false)[#text(size: size)[#body]]
+}
+#let h2(body) = {
+    h1(body, depth: 2, size: 16pt)
+}
+#let h3(body) = {
+    h1(body, depth: 3, size: 14pt)
+}
+
 #set document(
     title: [Komunikační aplikace zaměřující se na soukromí pomocí decentralizace],
     author: "Michal Stránský",
@@ -91,6 +101,105 @@ pod vedením Ing. Zdeňka Drvoty
 
 Zdokumentováno dne: 2026-01-11
 ]
+#pagebreak()
+#h1("Zadání maturitního projektu")
+
+Jméno a příjmení: Michal Stránský  
+
+Pro školní rok: 2025/2026  
+
+Třída: 4. B  
+
+Obor: Informační technologie 18-20-M/01  
+
+Téma práce: Bezpečná P2P komunikační aplikace pro Linux  
+
+Vedoucí práce: Ing. Zdeněk Drvota  
+
+#h2("Cíl práce")
+
+#h3("Vývoj aplikace pro Linux s těmito vlastnostmi:")
+- Šifrovaný textový a hlasový chat mezi uživateli
+- End-to-end šifrování (E2EE)
+- peer-to-peer architektura
+- Minimalizace metadat a ochrana soukromí
+#h3("Doplňující vzdělávací cíle:")
+- Praktické osvojení konceptů kryptografie a síťových technologií
+
+#h2("Očekávané výstupy")
+
+#h3("1. Bezpečnostní vrstva")
+- Implementace bezpečného protokolu
+- Bezpečná výměna klíčů
+- Autentizace uživatelů
+
+#h3("2. Komunikační jádro")
+- P2P spojení mezi klienty
+- P2P relay server
+
+#h3("3. Uživatelské rozhraní")
+- Textové terminálové rozhraní (TUI)
+- Základní funkce:
+  - Správa kontaktů
+  - Šifrovaný textový chat
+  - Spuštění hlasového hovoru
+
+#h3("4. Hlasový modul")
+- Efektivní komprese audia 
+
+#h2("Funkční požadavky")
+
+#h3("Šifrování")
+  - End-to-end šifrování všech dat
+  - Ověření identity protistrany
+
+#h3("Síťová komunikace")
+  - P2P spojení
+  - Odolnost proti změnám síťového prostředí
+
+#h3("Textový chat")
+  - Real-time přenos zpráv
+
+#h3("Hlasový chat")
+  - Šifrované hovory
+
+#h2("Časový harmonogram")
+
+#h3("Září-Říjen 2025")
+- Analýza bezpečnostních protokolů
+- Návrh kryptografického modelu
+- Studie P2P architektur
+
+#h3("Listopad 2025")
+- Implementace šifrovací vrstvy
+- Základní síťová komunikace
+- Testování kryptografických funkcí
+
+#h3("Prosinec 2025-Leden 2026")
+- Vývoj textového rozhraní (TUI)
+- Integrace textového chatu
+- Uživatelská správa kontaktů
+
+#h3("Únor–Březen 2026")
+- Implementace hlasového modulu
+- Testování a optimalizace latence
+- Penetrační testování
+
+#h3("Duben 2026")
+- Komplexní integrační testy
+- Dokumentace projektu
+- Příprava na obhajobu
+
+#h3("Květen 2026")
+- Obhajoba projektu
+
+
+#h2("Kritéria úspěchu")
+
+1. Veškerá komunikace šifrována end-to-end
+2. Funkční P2P spojení
+3. Textové rozhraní běžící na Linux
+
 
 #pagebreak()
 #super-heading[Prohlášení]
