@@ -134,7 +134,8 @@ networking, peer-to-peer, p2p, decentralization, tui, cli, chat, libp2p, rust, a
 // TODO: Začít úvodem do peer to peer sítí a jejich architekturou , mozna porovnaní mezi server-client architekturou a moznymi problemy napriklad peer-discovery, hole-punching, navázání spojení,  utoky
 Peer-to-peer (P2P) architektura je komputační model, kde jsou si uzly v síti rovni, komunikují a sdílejí informace napřímo mezi sebou. Každý uzel může být klientem i serverem zároveň. Oproti client-server architektuře, kde spoléháme na server, aby přechovával a předal informace a data za nás. Ačkoli je P2P architektura velmi užitečná, přibývají s ní i nějaké překážky, které musíme překonat. Ty jsou například překonání Network Address Translation(NAT) a firewallů, které nám občas znemožní navázat přímé spojení s ostatními uzly. Odpojení uzlů ze sítě, což nám znemožní je kontaktovat a může způsobit ztrátu dat. Bezpečnost a důvěra, některé uzly mohou lhát, vracet špatná koruptovaná data nebo útočit na síť. 
 Moje aplikace používá hybridní přístup k P2P architektuře, v síti jsou centrální servery, které přechovávají pouze mapování jmen k identitě uživatele v síti a relay servery které jim poskytují navázat přes ně přímé spojení.
-
+// https://www.pynetlabs.com/peer-to-peer-architecture/
+// https://www.geeksforgeeks.org/system-design/peer-to-peer-p2p-architecture/
 == Postup vývoje
 + Analytická fáze: rešerše podobných existujících platforem a analýza jejich provedení.
 + Návrhová fáze: vytvoření architektury aplikace, návrhu databázového schématu a uživatelského rozhraní.
